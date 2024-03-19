@@ -11,6 +11,18 @@ namespace ZoneTool
 		{
 
 			//Div ADDED techs
+			{"particle_cloud_sparkf", 						"particle_cloud_sparkf_add_ga"},
+			{"mc_l_sm_du_dm_b0c0n0s0",						"mc_l_sm_du_dm_r0c0n0sd0_nfwpf"},
+			{"wc_l_sm_r0c0n0s0p0_nocast",						"wc_l_sm_r0c0n0sd0p0_nfwpf"},
+			{"wc_l_sm_t0c0n0s0p0_nocast",						"wc_l_sm_t0c0n0sd0_nfwpf_frt_aat"},
+			{"wc_distortion_scale_ua",						"wc_distortion_scale_ua_legacydst_dat"},
+			{"wc_l_sm_nofog_ua_b0c0n0s0p0_nocast",					"wc_l_sm_nofog_r0c0n0sd0_nfwpf"},
+			{"mc_l_flag_t0c0",							"mc_l_flag_fuv_t0c0_nfwpf"},
+			{"mc_l_sm_flag_t0c0",							"mc_l_sm_flag_fuv_t0c0n0sd0_nfwpf"},
+			("mc_l_sm_b0c0s0_nocast",						"mc_l_sm_b0c0n0sd0_cltrans"),
+			{"mc_l_sm_t0c0d0n0s0p",							"mc_l_sm_t0c0d0n0sd0p0ct0_nfwpf"},
+
+
 
 			{"mc_l_sm_heat_t0c0n0s0p0", 						"mc_l_sm_heat_t0c0n0sd0p0_nfwpf"},
 			{"m_l_sm_b0c0n0s0",							"m_l_sm_b0c0n0sd0_cltrans"},

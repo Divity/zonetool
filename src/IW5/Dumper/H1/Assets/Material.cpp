@@ -9,6 +9,40 @@ namespace ZoneTool
 	{
 		std::unordered_map<std::string, std::string> mapped_techsets =
 		{
+
+			//Div ADDED techs
+
+			{"mc_l_sm_heat_t0c0n0s0p0", 						"mc_l_sm_heat_t0c0n0sd0p0_nfwpf"},
+			{"m_l_sm_b0c0n0s0",							"m_l_sm_b0c0n0sd0_cltrans"},
+			{"mc_l_sm_heat_t0c0n0s0p0", 						"mc_l_sm_heat_t0c0n0sd0p0_nfwpf"},
+			{"mc_l_sm_r0c0n0s0o0p0",						"mc_l_sm_r0c0n0sd0p0_nfwpf"},
+			{"mc_l_sm_r0c0n0s0p0_nocast",						"mc_l_sm_r0c0n0sd0p0_nfwpf"},
+			{"mc_l_sm_r0c0q0n0s0o0",						"mc_l_sm_r0c0q0n0sd0p0_nfwpf"}, //might crash idk yet
+			{"mc_l_sm_flag_t0c0s0",							"mc_l_sm_flag_fuv_t0c0n0sd0_nfwpf"},
+			{"mc_l_sm_du_dm_t0c0q0n0s0p0",						"mc_l_sm_du_dm_r0c0n0sd0_nfwpf"}, //uhhh
+			{"mc_l_t0c0n0s0o0",							"mc_l_t0c0n0sd0_nfwpf"},
+			{"mc_l_t0c0o0",								"mc_l_t0c0_nfwpf"}, //no o0
+			{"mc_l_sm_heat_r0c0s0p0",						"mc_l_sm_r0c0sd0p0_nfwpf",}
+			{"mc_l_sm_heat_b0c0s0p0",						"mc_l_sm_b0c0n0sd0_cltrans"},
+			{"mc_l_sm_r0c0q0n0s0o0",						"mc_l_sm_r0c0q0n0sd0p0_nfwpf"},
+			{"mc_l_sm_r0c0n0s0o0p0",						"mc_l_sm_r0c0n0sd0p0_nfwpf"},
+			{"mc_l_sm_t0c0n0s0p0_nocast",						"mc_l_sm_t0c0n0sd0p0_nfwpf"},
+			{"mc_l_t0c0q0n0s0o0",							"mc_l_t0c0n0sd0_nfwpf"},
+			{"mc_unlit_screen_lin",							"mc_unlit_screen_lin_ndw_ua_cltrans"},
+			{"mc_l_sm_r0c0d0n0s0o0",						"mc_l_sm_r0c0d0n0sd0p0_nfwpf"},
+			{"mc_l_sm_r0c0q0n0s0o0p0",						"mc_l_sm_r0c0q0n0sd0p0_nfwpf"},
+			{"mc_l_sm_du_dm_r0c0n0s0",						"mc_l_sm_du_dm_r0c0n0sd0_nfwpf"},
+			
+			//WC
+			{"wc_l_sm_r0c0n0s0o0",							"wc_l_sm_r0c0n0sd0p0_nfwpf"},
+			{"wc_l_sm_r0c0d0n0s0o0",						"wc_l_sm_r0c0d0n0sd0_nfwpf"},
+			{"wc_tools_r0c0",							"wc_tools_r0c0ct0"},
+			{"wc_l_sm_r0c0q0n0s0o0p0",						"wc_l_sm_r0c0q0n0sd0p0_nfwpf"},
+			
+
+
+			
+
 			//	IW5,									H1
 			{"wc_l_sm_a0c0",							"wc_l_sm_a0c0_nfwpf_frt_aat"},
 			{"wc_l_sm_r0c0",							"wc_l_sm_r0c0_nfwpf"},

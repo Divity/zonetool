@@ -22,7 +22,7 @@ namespace ZoneTool
 			{"mc_l_sm_du_dm_t0c0q0n0s0p0",						"mc_l_sm_du_dm_r0c0n0sd0_nfwpf"}, //uhhh
 			{"mc_l_t0c0n0s0o0",							"mc_l_t0c0n0sd0_nfwpf"},
 			{"mc_l_t0c0o0",								"mc_l_t0c0_nfwpf"}, //no o0
-			{"mc_l_sm_heat_r0c0s0p0",						"mc_l_sm_r0c0sd0p0_nfwpf",}
+			{"mc_l_sm_heat_r0c0s0p0",						"mc_l_sm_r0c0sd0p0_nfwpf"},
 			{"mc_l_sm_heat_b0c0s0p0",						"mc_l_sm_b0c0n0sd0_cltrans"},
 			{"mc_l_sm_r0c0q0n0s0o0",						"mc_l_sm_r0c0q0n0sd0p0_nfwpf"},
 			{"mc_l_sm_r0c0n0s0o0p0",						"mc_l_sm_r0c0n0sd0p0_nfwpf"},

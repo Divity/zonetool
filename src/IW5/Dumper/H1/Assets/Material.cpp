@@ -32,6 +32,9 @@ namespace ZoneTool
 			{"wc_l_ua_b0c0nf0s0p0_nocast"						"wc_l_sm_lmpb_nofog_ndw_ua_b0c0v0n0_cltrans_nocast"},
 			{"wc_l_ua_r0c0nf0s0p0_nocast"						"wc_l_sm_lmpb_nofog_ndw_ua_b0c0v0n0_cltrans_nocast"},
 			{"wc_l_sm_ua_b0c0nf0s0p0_nocast"					"wc_l_sm_lmpb_ndw_ua_b0c0n0sd0sr0_nfwpf_nocast_frt_aat"},
+			{"wc_ocean_displace_foam_pfoam_detail_flatn_sdif",			"wc_ocean_nolm_displace_depth_foam_gloss_ssr_detail_flatdn_cltrans_hdr"}, //ocean?
+			
+
 			
 
 

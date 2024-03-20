@@ -19,7 +19,7 @@ namespace ZoneTool
 			{"wc_l_sm_nofog_ua_b0c0n0s0p0_nocast",					"wc_l_sm_nofog_r0c0n0sd0_nfwpf"},
 			{"mc_l_flag_t0c0",							"mc_l_flag_fuv_t0c0_nfwpf"},
 			{"mc_l_sm_flag_t0c0",							"mc_l_sm_flag_fuv_t0c0n0sd0_nfwpf"},
-			("mc_l_sm_b0c0s0_nocast",						"mc_l_sm_b0c0n0sd0_cltrans"),
+			{"mc_l_sm_b0c0s0_nocast",						"mc_l_sm_b0c0n0sd0_cltrans"},
 			{"mc_l_sm_t0c0d0n0s0p",							"mc_l_sm_t0c0d0n0sd0p0ct0_nfwpf"},
 
 			{"mc_l_sm_t0c0d0n0s0p0", 						"mc_l_sm_t0c0d0n0sd0p0ct0_nfwpf"},

@@ -90,6 +90,7 @@ workspace "zonetool"
 	include "dep/steam_api.lua"
 	include "dep/zlib.lua"
 	include "dep/zstd.lua"
+	include "dep/gsc-tool.lua"
 
 	-- All projects here should be in the thirdparty folder
 	group "thirdparty"
@@ -98,6 +99,7 @@ workspace "zonetool"
 	libtomcrypt:project()
 	zlib:project()
 	zstd:project()
+	gsctool:project()
 
 	-- Reset group
 	group ""

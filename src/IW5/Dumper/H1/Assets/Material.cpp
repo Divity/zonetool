@@ -29,8 +29,8 @@ namespace ZoneTool
 			{"wc_l_sm_ua_b0c0nf0s0p0_nocast",					"wc_l_sm_ua_b0c0n0sd0sr0_cltrans_frt"},
 
 			//experimental water shit
-			{"wc_l_ua_b0c0nf0s0p0_nocast"						"wc_l_ua_b0c0nf0s0p0_nocast"},
-			{"wc_l_ua_r0c0nf0s0p0_nocast"						"wc_l_ua_b0c0nf0s0p0_nocast"},
+			{"wc_l_ua_b0c0nf0s0p0_nocast"						"wc_l_sm_lmpb_nofog_ndw_ua_b0c0v0n0_cltrans_nocast"},
+			{"wc_l_ua_r0c0nf0s0p0_nocast"						"wc_l_sm_lmpb_nofog_ndw_ua_b0c0v0n0_cltrans_nocast"},
 			{"wc_l_sm_ua_b0c0nf0s0p0_nocast"					"wc_l_sm_lmpb_ndw_ua_b0c0n0sd0sr0_nfwpf_nocast_frt_aat"}.
 			
 

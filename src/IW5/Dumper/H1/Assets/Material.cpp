@@ -64,7 +64,7 @@ namespace ZoneTool
 			
 
 
-			
+			//////////////////////////////////BUILTIN DONT DELETE UNDER HERE///////////////////////////////////////////////
 
 			//	IW5,									H1
 			{"wc_l_sm_a0c0",							"wc_l_sm_a0c0_nfwpf_frt_aat"},

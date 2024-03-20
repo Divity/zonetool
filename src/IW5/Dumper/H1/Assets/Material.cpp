@@ -22,6 +22,17 @@ namespace ZoneTool
 			("mc_l_sm_b0c0s0_nocast",						"mc_l_sm_b0c0n0sd0_cltrans"),
 			{"mc_l_sm_t0c0d0n0s0p",							"mc_l_sm_t0c0d0n0sd0p0ct0_nfwpf"},
 
+			{"mc_l_sm_t0c0d0n0s0p0", 						"mc_l_sm_t0c0d0n0sd0p0ct0_nfwpf"},
+			{"mc_l_sm_r0c0q0s0",							"mc_l_sm_r0c0sd0_nfwpf"},
+			{"mc_l_r0c0_nocast",							"mc_l_r0c0n0sd0_nfwpf"},
+			{"wc_distortion_scale_ua_zfeathe",					"wc_distortion_scale_ua_legacydst_dat"},
+			{"wc_l_sm_ua_b0c0nf0s0p0_nocast",					"wc_l_sm_ua_b0c0n0sd0sr0_cltrans_frt"},
+
+			//experimental water shit
+			{"wc_l_ua_b0c0nf0s0p0_nocast"						"wc_l_ua_b0c0nf0s0p0_nocast"},
+			{"wc_l_ua_r0c0nf0s0p0_nocast"						"wc_l_ua_b0c0nf0s0p0_nocast"},
+			{"wc_l_sm_ua_b0c0nf0s0p0_nocast"					"wc_l_sm_lmpb_ndw_ua_b0c0n0sd0sr0_nfwpf_nocast_frt_aat"}.
+			
 
 
 			{"mc_l_sm_heat_t0c0n0s0p0", 						"mc_l_sm_heat_t0c0n0sd0p0_nfwpf"},

@@ -11,6 +11,17 @@ namespace ZoneTool
 		{
 
 			//Div ADDED techs
+
+			{"mc_l_sm_heat_r0c0n0s0",						"mc_l_sm_heat_t0c0n0sd0p0_nfwpf"},
+			{"mc_l_sm_heat_r0c0n0s0p0",						"mc_l_sm_heat_t0c0n0sd0p0_nfwpf"},
+			{"mc_l_sm_heat_b0c0n0s0",						"mc_l_sm_heat_t0c0n0sd0p0_nfwpf"},
+
+			{"wc_l_sm_ua_b0c0n0s0",							"wc_l_sm_ua_b0c0n0sd0sr0_cltrans_frt"},
+			{"wc_unlit_blend_lin_custom_objective",					"wc_unlit_blend_lin_ndw_nfwpf"},
+			{"wc_l_sm_t0c0_nocast",							"wc_l_sm_t0c0_nfwpf_frt_aat"},
+			{"wc_l_sm_b0c0n0s0_nocast",						"wc_l_sm_lmpb_ndw_b0c0n0_nfwpf_frt_im_aat"},
+			{"wc_ambient_t0c0_nocast",						"mc_ambient_t0c0_nfwpf_nocast"},
+
 			{"particle_cloud_sparkf", 						"particle_cloud_sparkf_add_ga"},
 			{"mc_l_sm_du_dm_b0c0n0s0",						"mc_l_sm_du_dm_r0c0n0sd0_nfwpf"},
 			{"wc_l_sm_r0c0n0s0p0_nocast",						"wc_l_sm_r0c0n0sd0p0_nfwpf"},

@@ -15,6 +15,15 @@ namespace ZoneTool
 			{"mc_l_sm_heat_r0c0n0s0",						"mc_l_sm_heat_t0c0n0sd0p0_nfwpf"},
 			{"mc_l_sm_heat_r0c0n0s0p0",						"mc_l_sm_heat_t0c0n0sd0p0_nfwpf"},
 			{"mc_l_sm_heat_b0c0n0s0",						"mc_l_sm_heat_t0c0n0sd0p0_nfwpf"},
+			{"mc_l_heat_r0c0n0s0_nocast",						"mc_l_sm_heat_t0c0n0sd0p0_nfwpf"},
+			{"mc_l_heat_b0c0s0_nocast",						"mc_l_sm_heat_t0c0n0sd0p0_nfwpf"},
+			{"effect_zfeather_blend_nofog_eyeoffset",				"effect_zf_blend_nofog_eo_ndw_mask"},
+			{"effect_zfeather_falloff_screen_nofog",				"effect_zf_falloff_screen_nofog_ndw"},
+			{"effect_zfeather_falloff_add_lin_nofog_eyeoffset",			"effect_zf_falloff_add_nofog_eo_ndw"},
+
+			{"wc_l_sm_r0c0q0s0p0",							"wc_l_sm_r0c0sd0_nfwpf"},
+			{"effect_screen_nofog",							"effect_zf_hss_add_nofog_ndw"},
+			
 
 			{"wc_l_sm_ua_b0c0n0s0",							"wc_l_sm_ua_b0c0n0sd0sr0_cltrans_frt"},
 			{"wc_unlit_blend_lin_custom_objective",					"wc_unlit_blend_lin_ndw_nfwpf"},

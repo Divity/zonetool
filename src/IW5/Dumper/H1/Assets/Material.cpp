@@ -97,7 +97,7 @@ namespace ZoneTool
 			{"mc_l_sm_r0c0n0s0o0p0",						"mc_l_sm_r0c0n0sd0p0_nfwpf"},
 			{"mc_l_sm_t0c0n0s0p0_nocast",						"mc_l_sm_t0c0n0sd0p0_nfwpf"},
 			{"mc_l_t0c0q0n0s0o0",							"mc_l_t0c0n0sd0_nfwpf"},
-			{"mc_unlit_screen_lin",							"mc_unlit_screen_lin_ndw_ua_cltrans"},
+			//{"mc_unlit_screen_lin",							"mc_unlit_screen_lin_ndw_ua_cltrans"}, broken no tequnique in h1 for the h1 techset?
 			{"mc_l_sm_r0c0d0n0s0o0",						"mc_l_sm_r0c0d0n0sd0p0_nfwpf"},
 			{"mc_l_sm_r0c0q0n0s0o0p0",						"mc_l_sm_r0c0q0n0sd0p0_nfwpf"},
 			{"mc_l_sm_du_dm_r0c0n0s0",						"mc_l_sm_du_dm_r0c0n0sd0_nfwpf"},

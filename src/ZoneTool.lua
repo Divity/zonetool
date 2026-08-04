@@ -35,6 +35,7 @@ function ZoneTool:project()
         IW4:link()
         IW5:link()
         CODO:link()
+		T4:link()
         ZoneUtils:link()
         SteamApi:link()
         
@@ -59,6 +60,7 @@ function ZoneTool:project()
                 "if \"%COMPUTERNAME%\" == \"DESKTOP-G5EPE91\" ( copy /y \"$(TargetPath)\" \"D:\\Program Files (x86)\\Steam\\steamapps\\common\\Call of Duty 4\\zoneiw3.dll\" )",
                 "if \"%COMPUTERNAME%\" == \"DESKTOP-G5EPE91\" ( copy /y \"$(TargetPath)\" \"D:\\Program Files (x86)\\Steam\\steamapps\\common\\Call of Duty Modern Warfare 2\\zonetool.dll\" )",
                 "if \"%COMPUTERNAME%\" == \"DESKTOP-G5EPE91\" ( copy /y \"$(TargetPath)\" \"D:\\Program Files (x86)\\Steam\\steamapps\\common\\Call of Duty Modern Warfare 3\\zonetool.dll\" )",
+				"if \"%COMPUTERNAME%\" == \"DESKTOP-G5EPE91\" ( copy /y \"$(TargetPath)\" \"D:\\Program Files (x86)\\Steam\\steamapps\\common\\Call of Duty World at War\\zonetool.dll\" )",
             }
         filter {}
 end

@@ -14,6 +14,7 @@
 #include <IW4/IW4.hpp>
 #include <IW5/IW5.hpp>
 #include <CODO/CODO.hpp>
+#include <T4/T4.hpp>
 #include "Utils/Swizzle.hpp"
 
 #pragma comment(lib, "Dbghelp")
@@ -727,6 +728,7 @@ namespace ZoneTool
 		register_linker<IW4::Linker>();
 		register_linker<IW5::Linker>();
 		register_linker<CODO::Linker>();
+		register_linker<T4::Linker>();
 
 		// check if a custom linker is present in the current game directory
 		if (is_custom_linker_present())

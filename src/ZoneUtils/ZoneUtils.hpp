@@ -100,10 +100,11 @@ namespace ZoneTool
 		iw4_release,
 		iw4_release_console,
 		iw5_release,
+		t4_release,
 		max,
 	};
 
-	static std::string zone_target_version_str[8] = 
+	static std::string zone_target_version_str[9] = 
 	{
 		"iw3_alpha_253",
 		"iw3_alpha_290",
@@ -113,6 +114,7 @@ namespace ZoneTool
 		"iw4_release",
 		"iw4_release_console",
 		"iw5_release",
+		"t4_release",
 	};
 	
 	static void endian_convert(void* data, const std::size_t size)
@@ -139,7 +141,7 @@ namespace ZoneTool
 	}
 	template <typename T> static void endian_convert(T* data)
 	{
-		return endian_convert((void*)data, sizeof T);
+		return endian_convert((void*)data, sizeof(T));
 	}
 #pragma push(pop)
 }

@@ -339,29 +339,6 @@ namespace ZoneTool
 		return ZoneBuffer::compress_zlib(data.data(), data.size(), compress_blocks);
 	}
 
-	std::vector<std::uint8_t> ZoneBuffer::compress_zstd()
-	{
-		// calculate buffer size needed for current zone
-		auto size = ZSTD_compressBound(this->m_pos);
-
-		// alloc array for compressed data
-		std::vector<std::uint8_t> compressed;
-		compressed.resize(size);
-
-		// compress buffer
-		auto destsize = ZSTD_compress(compressed.data(), size, this->m_buf.data(), this->m_pos, 11);
-		compressed.resize(destsize);
-
-		if (ZSTD_isError(destsize))
-		{
-			ZONETOOL_ERROR("An error occured while compressing the fastfile: %s", ZSTD_getErrorName(destsize));
-			return {};
-		}
-
-		// return compressed buffer
-		return compressed;
-	}
-
 	std::vector<std::uint8_t> ZoneBuffer::compress_zlib(bool compress_blocks)
 	{
 		return ZoneBuffer::compress_zlib(this->m_buf.data(), this->m_pos, compress_blocks);

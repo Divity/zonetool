@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Assets">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Assets\Rawfile.hpp">
+      <Filter>Assets</Filter>
+    </ClInclude>
+    <ClInclude Include="Structs.hpp" />
+    <ClInclude Include="T4.hpp" />
+    <ClInclude Include="stdafx.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Assets\Rawfile.cpp">
+      <Filter>Assets</Filter>
+    </ClCompile>
+    <ClCompile Include="Functions.cpp" />
+    <ClCompile Include="T4.cpp" />
+    <ClCompile Include="stdafx.cpp" />
+  </ItemGroup>
+</Project>

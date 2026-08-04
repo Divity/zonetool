@@ -3,11 +3,19 @@
 // Call of Duty titles. 
 //
 // Project: https://github.com/ZoneTool/zonetool
-// Author: RektInator (https://github.com/RektInator)
+// Author: momo5502 (https://github.com/momo5502)
 // License: GNU GPL v3.0
 // ========================================================
-#include "stdafx.hpp"
+#pragma once
 
 namespace ZoneTool
 {
+	namespace T4
+	{
+		class IMapEnts
+		{
+		public:
+			static void dump(MapEnts* asset, ZoneMemory* mem);
+		};
+	}
 }

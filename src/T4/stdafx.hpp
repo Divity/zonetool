@@ -6,8 +6,16 @@
 // Author: RektInator (https://github.com/RektInator)
 // License: GNU GPL v3.0
 // ========================================================
-#include "stdafx.hpp"
+#pragma once
 
-namespace ZoneTool
-{
-}
+#define _CRT_SECURE_NO_WARNINGS
+#define WIN32_LEAN_AND_MEAN
+
+#include <Windows.h>
+#include <vector>
+#include <string>
+
+using namespace std::string_literals;
+
+#include "T4.hpp"
+#include "IW4/Structs.hpp"

@@ -18,7 +18,7 @@ namespace ZoneTool
 		static Function<void(XZoneInfo*, std::uint32_t, std::uint32_t)> DB_LoadXAssets = 0x5CA950;
 
 		typedef int (__cdecl * DB_GetXAssetSizeHandler_t)();
-		static DB_GetXAssetSizeHandler_t* DB_GetXAssetSizeHandlers = (DB_GetXAssetSizeHandler_t*)0x4B9C50;
+		static DB_GetXAssetSizeHandler_t* DB_GetXAssetSizeHandlers = (DB_GetXAssetSizeHandler_t*)0x8D0D48;
 
 		static const char* SL_ConvertToString(std::uint16_t index)
 		{

@@ -19,45 +19,41 @@ namespace ZoneTool
 
         enum XAssetType : std::int32_t
         {
-            xmodelpieces,
-            physpreset,
-            xanim,
-            xmodel,
-            material,
-            techset,
-            image,
-            sound,
-            sndcurve,
-            loaded_sound,
-            col_map_sp,
-            col_map_mp,
-            com_map,
-            game_map_sp,
-            game_map_mp,
-            map_ents,
-            gfx_map,
-            lightdef,
-            ui_map,
-            // not used
-            font,
-            menufile,
-            menu,
-            localize,
-            weapon,
-            snddriverglobals,
-            // not used
-            fx,
-            impactfx,
-            aitype,
-            // not used
-            mptype,
-            // not used
-            character,
-            // not used
-            xmodelalias,
-            // not used
-            rawfile,
-            stringtable,
+            xmodelpieces,      // 0
+            physpreset,        // 1
+            physconstraints,   // 2
+            destructibledef,   // 3
+            xanim,             // 4
+            xmodel,            // 5
+            material,          // 6
+            techset,            // 7
+            image,              // 8
+            sound,              // 9
+            loaded_sound,      // 10
+            col_map_sp,        // 11
+            col_map_mp,        // 12
+            com_map,            // 13
+            game_map_sp,        // 14
+            game_map_mp,        // 15
+            map_ents,           // 16
+            gfx_map,            // 17
+            lightdef,           // 18
+            ui_map,              // 19
+            font,                // 20
+            menufile,            // 21
+            menu,                // 22
+            localize,            // 23
+            weapon,              // 24
+            snddriverglobals,   // 25
+            fx,                  // 26
+            impactfx,            // 27
+            aitype,              // 28
+            mptype,             // 29
+            character,          // 30
+            xmodelalias,        // 31
+            rawfile,            // 32
+            stringtable,        // 33
+            packindex,          // 34
             max,
         };
 
@@ -95,7 +91,7 @@ namespace ZoneTool
 
         union XAssetHeader
         {
-            // XModelPieces *xmodelPieces; // NOT AN ASSET
+            XModelPieces *xmodelPieces; // NOT AN ASSET
             PhysPreset* physPreset;
             PhysConstraints* physConstraints;
             DestructibleDef* destructibleDef;
@@ -108,13 +104,13 @@ namespace ZoneTool
             GfxImage* image;
             snd_alias_list_t* sound;
             LoadedSound* loadSnd;
-            clipMap_t* clipMap;
-            ComWorld* comWorld;
-            GameWorldSp* gameWorldSp;
-            GameWorldMp* gameWorldMp;
+            clipMap_t* col_map_mp;
+            ComWorld* com_map;
+            GameWorldSp* game_map_sp;
+            GameWorldMp* game_map_mp;
             MapEnts* mapEnts;
             MapEnts* map_ents;
-            GfxWorld* gfxWorld;
+            GfxWorld* gfx_map;
             GfxLightDef* lightDef;
             Font_s* font;
             MenuList* menuList;
@@ -200,6 +196,50 @@ namespace ZoneTool
             ATTACH_POINT_DYNENT = 0x1,
             ATTACH_POINT_ENT = 0x2,
             ATTACH_POINT_BONE = 0x3,
+        };
+
+        struct XModelPiece
+        {
+            XModel* model;
+            float offset[3];
+        };
+
+        struct XModelPieces
+        {
+            const char* name;
+            int numpieces;
+            XModelPiece* pieces;
+        };
+
+        struct PhysPreset
+        {
+            const char* name;
+            int type;
+            float mass;
+            float bounce;
+            float friction;
+            float bulletForceScale;
+            float explosiveForceScale;
+            const char* sndAliasPrefix;
+            float piecesSpreadFraction;
+            float piecesUpwardVelocity;
+            int canFloat;
+            float gravityScale;
+        };
+
+        struct PhysPresetInfo
+        {
+            float mass;
+            float bounce;
+            float friction;
+            int isFrictionInfinity;
+            float bulletForceScale;
+            float explosiveForceScale;
+            const char* sndAliasPrefix;
+            float piecesSpreadFraction;
+            float piecesUpwardVelocity;
+            int canFloat;
+            float gravityScale;
         };
 
         struct CardMemory
@@ -2236,14 +2276,16 @@ namespace ZoneTool
             GfxImage* secondary;
         };
 
-        struct __declspec(align(4)) GfxLightGridEntry
+#pragma pack(push, 4)
+
+        struct GfxLightGridEntry
         {
             uint16_t colorsIndex;
             char primaryLightIndex;
             char needsTrace;
         };
 
-        struct __declspec(align(4)) GfxLightGridColors
+        struct GfxLightGridColors
         {
             char rgb[56][3];
         };
@@ -2264,6 +2306,8 @@ namespace ZoneTool
             unsigned int colorCount;
             GfxLightGridColors* colors;
         };
+
+#pragma pack(pop)
 
         struct GfxBrushModelWritable
         {

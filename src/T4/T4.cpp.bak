@@ -70,23 +70,197 @@ namespace ZoneTool
 			return (asset_header) ? asset_header->ptr.data : nullptr;
 		}
 
-		const char* Linker::GetAssetName(XAsset* asset)
+		void* Linker::DB_AddXAsset(XAsset* asset, int unk)
 		{
-			// todo
-			if (asset->type == image)
+			auto result =
+				Memory::func<void* (XAsset*, int)>(0x004BA530)(asset, unk);
+
+			if (result)
 			{
-				return asset->ptr.image->name;
-			}
-			if (asset->type == menu)
-			{
-				// return asset->ptr.menu->name;
-			}
-			else
-			{
-				return asset->ptr.rawfile->name;
+				auto* resultAsset = reinterpret_cast<XAsset*>(result);
+
+				if (!unk)
+				{
+					HandleAsset(resultAsset);
+				}
 			}
 
-			return "";
+			return result;
+		}
+
+		const char* Linker::GetAssetName(XAsset* asset)
+		{
+			if (!asset || !asset->ptr.data)
+				return "<NULL>";
+
+			switch (asset->type)
+			{
+			case physpreset:
+			{
+				auto* data = reinterpret_cast<PhysPreset*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case physconstraints:
+			{
+				auto* data = reinterpret_cast<PhysConstraints*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case destructibledef:
+			{
+				auto* data = reinterpret_cast<DestructibleDef*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case xanim:
+			{
+				auto* data = reinterpret_cast<XAnimParts*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case xmodel:
+			{
+				auto* data = reinterpret_cast<XModel*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case material:
+			{
+				auto* data = reinterpret_cast<Material*>(asset->ptr.data);
+				return data->info.name;
+			}
+
+			case techset:
+			{
+				auto* data = reinterpret_cast<MaterialTechniqueSet*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case image:
+			{
+				auto* data = reinterpret_cast<GfxImage*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case sound:
+			{
+				auto* data = reinterpret_cast<snd_alias_list_t*>(asset->ptr.data);
+				return data->aliasName;
+			}
+
+			case loaded_sound:
+			{
+				auto* data = reinterpret_cast<LoadedSound*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case col_map_sp:
+			case col_map_mp:
+			{
+				auto* data = reinterpret_cast<clipMap_t*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case com_map:
+			{
+				auto* data = reinterpret_cast<ComWorld*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case game_map_sp:
+			{
+				auto* data = reinterpret_cast<GameWorldSp*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case game_map_mp:
+			{
+				auto* data = reinterpret_cast<GameWorldMp*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case map_ents:
+			{
+				auto* data = reinterpret_cast<MapEnts*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case gfx_map:
+			{
+				auto* data = reinterpret_cast<GfxWorld*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case lightdef:
+			{
+				auto* data = reinterpret_cast<GfxLightDef*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case font:
+			{
+				auto* data = reinterpret_cast<Font_s*>(asset->ptr.data);
+				return data->fontName;
+			}
+
+			case menufile:
+			{
+				auto* data = reinterpret_cast<MenuList*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case menu:
+			{
+				auto* data = reinterpret_cast<menuDef_t*>(asset->ptr.data);
+				return data->window.name;
+			}
+
+			case localize:
+			{
+				auto* data = reinterpret_cast<LocalizeEntry*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case weapon:
+			{
+				auto* data = reinterpret_cast<WeaponDef*>(asset->ptr.data);
+				return data->szInternalName;
+			}
+
+			case fx:
+			{
+				auto* data = reinterpret_cast<FxEffectDef*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case impactfx:
+			{
+				auto* data = reinterpret_cast<FxImpactTable*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case rawfile:
+			{
+				auto* data = reinterpret_cast<RawFile*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case stringtable:
+			{
+				auto* data = reinterpret_cast<StringTable*>(asset->ptr.data);
+				return data->name;
+			}
+
+			case packindex:
+			{
+				auto* data = reinterpret_cast<PackIndex*>(asset->ptr.data);
+				return data->name;
+			}
+
+			default:
+				return "<UNKNOWN>";
+			}
 		}
 
 		void Linker::HandleAsset(XAsset* asset)
@@ -94,133 +268,123 @@ namespace ZoneTool
 			static std::shared_ptr<ZoneMemory> memory;
 			static std::vector<std::pair<XAssetType, std::string>> referencedAssets;
 
-			ZONETOOL_INFO("type=%d ptr=%p", asset->type, asset->ptr.data);
+			if (!asset)
+				return;
 
-			if (!memory)
+			auto xassettypes = reinterpret_cast<char**>(0x008D0B98);
+
+			const char* typeName = "<UNKNOWN>";
+
+			if (asset->type >= 0 && asset->type < max)
 			{
-				memory = std::make_shared<ZoneMemory>(1024 * 1024 * 128);		// 128mb
+				typeName = xassettypes[asset->type];
 			}
 
-			// nice meme
-			if (isVerifying)
+			const char* assetName = GetAssetName(asset);
+
+			ZONETOOL_INFO("Loading asset \"%s\" of type %s.", Linker::GetAssetName(asset), reinterpret_cast<char**>(
+				0x008D0B98)[asset->type]);
+
+			if (!isDumping)
+				return;
+
+			// T4 fastfile name
+			auto fastfile = static_cast<std::string>(
+				*(const char**)0x116936C
+				);
+
+			FileSystem::SetFastFile(fastfile);
+
+			// Open CSV once
+			if (!csvFile)
 			{
-				// print asset name to console
-				ZONETOOL_INFO("Loading asset \"%s\" of type %s.", Linker::GetAssetName(asset), reinterpret_cast<char**>(
-					0x008D0B98)[asset->type]); //Updated for T4
-			}
+				const auto csvName = FileSystem::GetFastFile() + ".csv";
 
-			// fastfile name
-			auto fastfile = static_cast<std::string>(*(const char**)0x116936C); //Updated for T4
+				csvFile = FileSystem::FileOpen(csvName, "wb");
 
-			// dump shit
-			if (isDumping)
-			{
-				FileSystem::SetFastFile(fastfile);
-
-				// open csv file for dumping 
 				if (!csvFile)
 				{
-					csvFile = FileSystem::FileOpen(FileSystem::GetFastFile() + ".csv", "wb");
+					ZONETOOL_ERROR(
+						"Could not open CSV file \"%s\"!",
+						csvName.data()
+					);
+
+					return;
 				}
 
-				// dump assets to disk
-				if (csvFile)
+				for (auto& ref : referencedAssets)
 				{
-					auto xassettypes = reinterpret_cast<char**>(0x008D0B98);
-					fprintf(csvFile, "%s,%s\n", xassettypes[asset->type], GetAssetName(asset));
-				}
-
-				if (asset->type == rawfile && GetAssetName(asset) == currentDumpingZone)
-				{
-					for (auto& ref : referencedAssets)
+					if (ref.second.length() <= 1 || ref.first == XAssetType::loaded_sound)
 					{
-						if (ref.second.length() <= 1 || ref.first == XAssetType::loaded_sound)
-						{
-							continue;
-						}
-
-						const auto asset_name = &ref.second[1];
-						const auto ref_asset = DB_FindXAssetHeader_Unsafe(ref.first, asset_name);
-
-						if (ref_asset == nullptr)
-						{
-							ZONETOOL_ERROR("Could not find referenced asset \"%s\"!", asset_name);
-							continue;
-						}
-
-						XAsset asset;
-						asset.type = ref.first;
-						asset.ptr.data = ref_asset;
-
-						ZONETOOL_INFO("Dumping additional asset \"%s\" because it is referenced by %s.", asset_name, currentDumpingZone.data());
-
-						HandleAsset(&asset);
+						continue;
 					}
 
-					ZONETOOL_INFO("Zone \"%s\" dumped.", &fastfile[0]);
+					const auto asset_name = &ref.second[1];
+					const auto ref_asset = DB_FindXAssetHeader_Unsafe(ref.first, asset_name);
 
-					// clear referenced assets array because we are done dumping
-					referencedAssets.clear();
+					if (ref_asset == nullptr)
+					{
+						ZONETOOL_ERROR("Could not find referenced asset \"%s\"!", asset_name);
+						continue;
+					}
 
-					// free memory
-					memory->Free();
-					memory = nullptr;
+					XAsset asset;
+					asset.type = ref.first;
+					asset.ptr.data = ref_asset;
 
-					// close csv
-					FileSystem::FileClose(csvFile);
-					csvFile = nullptr;
+					ZONETOOL_INFO("Dumping additional asset \"%s\" because it is referenced by %s.", asset_name, currentDumpingZone.data());
 
-					FileSystem::SetFastFile("");
-					isDumping = false;
-					isVerifying = false;
+					HandleAsset(&asset);
 				}
+			}
 
-				// check if the asset is a reference asset
-				if (GetAssetName(asset)[0] == ',')
-				{
-					referencedAssets.push_back({asset->type, GetAssetName(asset)});
-				}
-				else
-				{
+			// Write EVERY asset
+			fprintf(
+				csvFile,
+				"%s,%s\n",
+				typeName,
+				assetName
+			);
+
+			fflush(csvFile);
+
+			if (GetAssetName(asset)[0] == ',')
+			{
+				referencedAssets.push_back({ asset->type, GetAssetName(asset) });
+			}
+			else
+			{
 #define DECLARE_ASSET(__TYPE__, __ASSET__) \
 if (asset->type == __TYPE__) \
 { \
 	__ASSET__::dump(asset->ptr.__TYPE__, memory.get()); \
 }
-					try
-					{
-						// DECLARE_ASSET(image, IGfxImage);
-						//DECLARE_ASSET(xmodel, IXModel);
-						//DECLARE_ASSET(material, IMaterial);
-						//DECLARE_ASSET(xanim, IXAnimParts);
-						//DECLARE_ASSET(techset, ITechset);
-						//DECLARE_ASSET(loaded_sound, ILoadedSound);
-						//DECLARE_ASSET(sound, ISound);
-						//DECLARE_ASSET(fx, IFxEffectDef);
-						//DECLARE_ASSET(font, IFontDef);
-						//DECLARE_ASSET(gfx_map, IGfxWorld);
-						//DECLARE_ASSET(col_map_mp, IClipMap);
-						//DECLARE_ASSET(map_ents, IMapEnts);
-						//DECLARE_ASSET(com_map, IComWorld);
-						//DECLARE_ASSET(game_map_mp, IGameWorldMp);
-						//if (asset->type == rawfile) {
-						//	IRawFile::dump(asset->ptr.rawfile, memory.get());
-						//};
-					}
-					catch (std::exception& ex)
-					{
-						ZONETOOL_FATAL("A fatal exception occured while dumping asset \"%s\", exception was: %s\n", GetAssetName(asset), ex.what());
-					}
+				try
+				{
+					DECLARE_ASSET(image, IGfxImage);
+					//DECLARE_ASSET(xmodel, IXModel);
+					//DECLARE_ASSET(material, IMaterial);
+					//DECLARE_ASSET(xanim, IXAnimParts);
+					//DECLARE_ASSET(techset, ITechset);
+					//DECLARE_ASSET(loaded_sound, ILoadedSound);
+					//DECLARE_ASSET(sound, ISound);
+					//DECLARE_ASSET(fx, IFxEffectDef);
+					//DECLARE_ASSET(font, IFontDef);
+					DECLARE_ASSET(gfx_map, IGfxWorld);
+					//DECLARE_ASSET(col_map_mp, IClipMap);
+					//DECLARE_ASSET(map_ents, IMapEnts);
+					DECLARE_ASSET(com_map, IComWorld);
+					//if (asset->type == game_map_mp) {
+					//	IGameWorldMp::dump(asset->ptr.gameWorldMp, memory.get());
+					//};
+					//DECLARE_ASSET(weapon, IWeaponDef);
+					DECLARE_ASSET(rawfile, IRawFile);
+				}
+				catch (std::exception& ex)
+				{
+					ZONETOOL_FATAL("A fatal exception occured while dumping asset \"%s\", exception was: %s\n", GetAssetName(asset), ex.what());
 				}
 			}
-		}
-
-		void* Linker::DB_AddXAsset(XAsset* asset, int unk)
-		{
-			HandleAsset(asset);
-
-			// call original function
-			return Memory::func<void* (XAsset * asset, int unk)>(0x4BA530)(asset, unk); //Updated for T4
 		}
 
 		void* ReallocateAssetPool(uint32_t type, unsigned int newSize)
@@ -278,10 +442,10 @@ if (asset->type == __TYPE__) \
 			}
 		}
 
-		/*void StoreTexture()
+		void StoreTexture()
 		{
-			GfxImageLoadDef** loadDef = *reinterpret_cast<GfxImageLoadDef***>(0xE34814);
-			GfxImage* image = *reinterpret_cast<GfxImage**>(0xE346C4);
+			GfxImageLoadDef** loadDef = *reinterpret_cast<GfxImageLoadDef***>(0x11696FC);
+			GfxImage* image = *reinterpret_cast<GfxImage**>(0x1169598);
 
 			ClearTextures();
 
@@ -301,7 +465,7 @@ if (asset->type == __TYPE__) \
 
 			if (textureBufferIndex >= textureBufferSize)
 			{
-				ZONETOOL_FATAL("IW3 Texture Buffer exceeded %imb/%imb",
+				ZONETOOL_FATAL("T4 Texture Buffer exceeded %imb/%imb",
 					(textureBufferIndex / 1024 / 1024), (textureBufferSize / 1024 / 1024));
 			}
 
@@ -309,8 +473,8 @@ if (asset->type == __TYPE__) \
 
 			image->texture.loadDef = reinterpret_cast<GfxImageLoadDef*>(data);
 
-			//reinterpret_cast<void(*)()>(0x616E80)();
-		}*/
+			reinterpret_cast<void(*)()>(0x6E2330)();
+		}
 
 		void Linker::startup()
 		{
@@ -327,7 +491,7 @@ if (asset->type == __TYPE__) \
 				ReallocateAssetPoolM(xmodel, 2);
 				ReallocateAssetPoolM(physpreset, 2);*/
 				//ReallocateAssetPoolM(weapon, 2);
-				//ReallocateAssetPoolM(game_map_sp, 2);
+				ReallocateAssetPoolM(game_map_sp, 2);
 				//ReallocateAssetPoolM(game_map_mp, 2);
 				//ReallocateAssetPoolM(map_ents, 5);
 				//ReallocateAssetPoolM(com_map, 5);
@@ -342,13 +506,14 @@ if (asset->type == __TYPE__) \
 				Memory(0x004BA892).call(DB_AddXAsset); //Updated for T4
 
 				// Always use dedicated mode
+				Memory(0x566117).call(Dedicated_RegisterDvarBool);
 				Memory(0x564D98).call(Dedicated_RegisterDvarBool); //Updated for T4
 				Memory(0x564DBE).call(Dedicated_RegisterDvarBool); //Updated for T4
 				Memory(0x564D98).call(Dedicated_RegisterDvarBool); //Updated for T4
 
 				// Store image data
 				Memory(0x6E234A).nop(3); //Updated for T4
-				//Memory(0x47A98E).call(StoreTexture);
+				//Memory(0x6E2330).call(StoreTexture);
 
 				// idc if you can't initialise PunkBuster
 				Memory(0x5D08C1).nop(5); //Updated for T4

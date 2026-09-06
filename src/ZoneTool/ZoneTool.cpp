@@ -484,12 +484,6 @@ namespace ZoneTool
 			return EXCEPTION_CONTINUE_EXECUTION;
 		}
 		
-		if (ZONETOOL_VERSION == "0.0.0"s)
-		{
-			MessageBoxA(nullptr, va("An exception occured (0x%08X) and ZoneTool must be restarted to continue. However, ZoneTool has detected that you are using a custom DLL. If you want to submit an issue, try to reproduce the bug with the latest release of ZoneTool. The latest version can be found here: https://github.com/ZoneTool/zonetool/releases", info->ExceptionRecord->ExceptionCode).data(), "ZoneTool", MB_ICONERROR);
-			std::exit(0);
-		}
-		
 		std::filesystem::create_directories("zonetool/crashdumps");
 
 		const auto exception_time = std::time(nullptr);
@@ -513,7 +507,7 @@ namespace ZoneTool
 			
 		}
 
-		const auto message = va("An exception occured and ZoneTool must be restarted to continue. If this keeps happening, create an issue on https://github.com/ZoneTool/zonetool with the crashdump attached. The crashdump can be found at: \"%s\".", file_name.data());
+		const auto message = va("An exception occured (0x%08X) at 0x%p and ZoneTool must be restarted to continue. The crashdump can be found at: \"%s\".", info->ExceptionRecord->ExceptionCode, info->ExceptionRecord->ExceptionAddress, file_name.data());
 		MessageBoxA(nullptr, message.data(), "ZoneTool", MB_ICONERROR);
 		std::exit(0);
 	}
@@ -681,6 +675,7 @@ namespace ZoneTool
 
 		// Execute command line commands?
 		auto args = get_command_line_arguments();
+		auto handled = false;
 		if (args.size() > 1)
 		{
 			for (auto i = 0u; i < args.size(); i++)
@@ -690,22 +685,28 @@ namespace ZoneTool
 					if (args[i] == "-buildzone")
 					{
 						build_zone(current_linker, args[i + 1]);
+						handled = true;
 						i++;
 					}
 					else if (args[i] == "-loadzone")
 					{
 						current_linker->load_zone(args[i + 1]);
+						handled = true;
 						i++;
 					}
 					else if (args[i] == "-dumpzone")
 					{
 						current_linker->dump_zone(args[i + 1]);
+						handled = true;
 						i++;
 					}
 				}
 			}
 
-			std::exit(0);
+			if (handled)
+			{
+				std::exit(0);
+			}
 		}
 	}
 

@@ -195,17 +195,15 @@ namespace ZoneTool
 			}
 		}
 
-		void IXSurface::write(IZone* zone, ZoneBuffer* buf)
+		void IXSurface::write_inline(IZone* zone, ZoneBuffer* buf, XModelSurfs* data)
 		{
-			auto* data = this->asset_;
 			auto* dest = buf->write<XModelSurfs>(data);
 
 			assert(sizeof XModelSurfs, 36);
 
 			buf->push_stream(3);
-			START_LOG_STREAM;
 
-			dest->name = buf->write_str(this->name());
+			dest->name = buf->write_str(data->name);
 
 			if (data->surfs)
 			{
@@ -214,8 +212,12 @@ namespace ZoneTool
 				ZoneBuffer::clear_pointer(&dest->surfs);
 			}
 
-			END_LOG_STREAM;
 			buf->pop_stream();
+		}
+
+		void IXSurface::write(IZone* zone, ZoneBuffer* buf)
+		{
+			write_inline(zone, buf, this->asset_);
 		}
 
 		void IXSurface::dump(XModelSurfs* asset)

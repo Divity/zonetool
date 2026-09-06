@@ -299,7 +299,7 @@ namespace ZoneTool
 				}
 				else
 				{
-					mat[i].image = Image_Parse(img.data(), mat[i].semantic, 0, 0, mem);
+					mat[i].image = Image_Parse(img.data(), mat[i].semantic, 3, 0, mem);
 				}
 			}
 
@@ -319,9 +319,28 @@ namespace ZoneTool
 			return hash;
 		}
 
+		std::string IMaterial::clean_name(const std::string& name)
+		{
+			if (name.empty() || name[0] != '*')
+			{
+				return name;
+			}
+
+			auto sanitized = name;
+			std::replace(sanitized.begin(), sanitized.end(), '*', '_');
+
+			const auto parenthesis = sanitized.find('(');
+			if (parenthesis != std::string::npos)
+			{
+				sanitized.erase(parenthesis);
+			}
+
+			return "generated\\" + sanitized;
+		}
+
 		__declspec(noinline) Material* IMaterial::parse(std::string name, ZoneMemory* mem)
 		{
-			auto path = "materials\\" + name;
+			auto path = "materials\\" + clean_name(name);
 			auto file = FileSystem::FileOpen(path, "rb"s);
 			if (!file)
 			{
@@ -658,7 +677,7 @@ namespace ZoneTool
 
 			std::string assetstr = matdata.dump(4);
 
-			auto assetPath = "materials\\"s + asset->name;
+			auto assetPath = "materials\\"s + clean_name(asset->name);
 
 			auto fileAsset = FileSystem::FileOpen(assetPath, "wb");
 

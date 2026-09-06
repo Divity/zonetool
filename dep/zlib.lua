@@ -2,7 +2,8 @@ zlib = {}
 
 function zlib:include()
 	includedirs {
-		path.join(DependencyFolder(), "zlib")
+		path.join(DependencyFolder(), "zlib"),
+		path.join(DependencyFolder(), "zlib/contrib/minizip")
 	}
 end
 
@@ -22,9 +23,13 @@ function zlib:project()
 		kind "StaticLib"
 		language "C"
 		
-		files { 
+		files {
 			path.join(folder, "zlib/*.h"),
-			path.join(folder, "zlib/*.c")
+			path.join(folder, "zlib/*.c"),
+			path.join(folder, "zlib/contrib/minizip/unzip.h"),
+			path.join(folder, "zlib/contrib/minizip/unzip.c"),
+			path.join(folder, "zlib/contrib/minizip/ioapi.h"),
+			path.join(folder, "zlib/contrib/minizip/ioapi.c")
 		}
 		
 		defines {

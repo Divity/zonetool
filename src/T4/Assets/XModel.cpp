@@ -14,6 +14,10 @@ namespace ZoneTool
 {
 	namespace T4
 	{
+		static_assert(sizeof(XSurfaceTri16) == 6);
+		static_assert(sizeof(IW4::Face) == 6);
+		static_assert(sizeof(GfxPackedVertex) == sizeof(IW4::GfxPackedVertex));
+
 		IW4::XSurface* GenerateIW4Surface(XSurface* asset, ZoneMemory* mem)
 		{
 			// allocate IW4 XSurface structure
@@ -66,7 +70,7 @@ namespace ZoneTool
 				xmodel->lods[i].numSurfacesInLod = asset->lodInfo[i].numsurfs;
 				xmodel->lods[i].surfIndex = asset->lodInfo[i].surfIndex;
 				memcpy(xmodel->lods[i].partBits, asset->lodInfo[i].partBits, sizeof(int[4]));
-				memcpy(&xmodel->lods[i].lod, &asset->lodInfo[i].lod, 3);
+				xmodel->lods[i].lod = asset->lodInfo[i].lod;
 
 				// generate ModelSurface object
 				xmodel->lods[i].surfaces = mem->Alloc<IW4::XModelSurfs>();;
@@ -112,7 +116,7 @@ namespace ZoneTool
 			xmodel->boneInfo = mem->Alloc<IW4::XBoneInfo>(xmodel->numBones);
 			for (int i = 0; i < xmodel->numBones; i++)
 			{
-				memcpy(&xmodel->boneInfo[i].bounds, &asset->boneInfo[i].bounds, sizeof(Bounds));
+				memcpy(&xmodel->boneInfo[i].bounds, &asset->boneInfo[i].bounds, sizeof(IW4::Bounds));
 
 				xmodel->boneInfo[i].packedBounds.compute();
 				xmodel->boneInfo[i].radiusSquared = asset->boneInfo[i].radiusSquared;

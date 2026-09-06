@@ -70,7 +70,9 @@ namespace ZoneTool
 
 			if (data->bytecode)
 			{
-				dest->bytecode = buf->write_s(3, data->bytecode, data->codeLen);
+				buf->align(3);
+				buf->write(data->bytecode, data->codeLen);
+				ZoneBuffer::clear_pointer(&dest->bytecode);
 			}
 
 			END_LOG_STREAM;

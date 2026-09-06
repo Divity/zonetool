@@ -29,6 +29,11 @@ namespace ZoneTool
 		{
 			PARSE_STRING(defName);
 
+			if (asset->defName && !*asset->defName)
+			{
+				asset->defName = nullptr;
+			}
+
 			PARSE_INT(type);
 			PARSE_INT(canUseShadowMap);
 			PARSE_INT(exponent);

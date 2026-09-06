@@ -350,6 +350,7 @@ namespace ZoneTool
 		static std::vector<std::uint8_t> compress_zlib(const std::vector<std::uint8_t>& data, bool compress_blocks = false);
 		
 		std::vector<std::uint8_t> compress_zlib(bool compress_blocks = false);
+		std::vector<std::uint8_t> compress_zstd();
 		void encrypt();
 	};
 }

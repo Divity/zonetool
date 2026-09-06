@@ -344,6 +344,26 @@ namespace ZoneTool
 		return ZoneBuffer::compress_zlib(this->m_buf.data(), this->m_pos, compress_blocks);
 	}
 
+	std::vector<std::uint8_t> ZoneBuffer::compress_zstd()
+	{
+		auto size = ZSTD_compressBound(this->m_pos);
+
+		std::vector<std::uint8_t> compressed;
+		compressed.resize(size);
+
+		auto destsize = ZSTD_compress(compressed.data(), size, this->m_buf.data(), this->m_pos, 11);
+
+		if (ZSTD_isError(destsize))
+		{
+			ZONETOOL_ERROR("An error occured while compressing the fastfile: %s", ZSTD_getErrorName(destsize));
+			return {};
+		}
+
+		compressed.resize(destsize);
+
+		return compressed;
+	}
+
 	void GenerateKeys(XZoneKey* key)
 	{
 		srand(time(nullptr));

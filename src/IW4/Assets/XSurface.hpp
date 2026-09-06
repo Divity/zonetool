@@ -19,7 +19,7 @@ namespace ZoneTool
 			XModelSurfs* asset_ = nullptr;
 
 		public:
-			XModelSurfs* parse(const std::string& name, ZoneMemory* mem);
+			static XModelSurfs* parse(const std::string& name, ZoneMemory* mem);
 
 			void init(const std::string& name, ZoneMemory* mem) override;
 			void init(void* asset, ZoneMemory* mem) override;
@@ -30,8 +30,10 @@ namespace ZoneTool
 			void* pointer() override { return asset_; }
 			std::string name() override;
 			std::int32_t type() override;
-			void write_xsurfaces(IZone* zone, ZoneBuffer* buf, XSurface* data, std::uint16_t count);
+			static void write_xsurfaces(IZone* zone, ZoneBuffer* buf, XSurface* data, std::uint16_t count);
 			void write(IZone* zone, ZoneBuffer* buffer) override;
+
+			static void write_inline(IZone* zone, ZoneBuffer* buf, XModelSurfs* data);
 
 			static void dump(XModelSurfs* asset);
 		};

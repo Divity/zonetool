@@ -71,7 +71,7 @@ namespace ZoneTool
 			img->height = reader->Read<int>();
 			img->width = reader->Read<int>();
 			img->depth = reader->Read<int>();
-			img->loaded = reader->Read<char>();
+			img->loaded = false;
 			img->name = mem->StrDup(reader->ReadString());
 
 			auto loaddef = mem->Alloc<GfxImageLoadDef>();

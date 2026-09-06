@@ -47,6 +47,29 @@ namespace ZoneTool
 			memcpy(&gfxmap->lightGrid, &iw5_gfxmap->lightGrid,
 			       Difference(&gfxmap->fogTypesAllowed + 1, &gfxmap->lightGrid));
 
+			if (iw5_gfxmap->dpvs.surfaceMaterials)
+			{
+				gfxmap->dpvs.surfaceMaterials = mem->Alloc<GfxDrawSurf>(gfxmap->surfaceCount);
+
+				for (auto i = 0u; i < gfxmap->surfaceCount; i++)
+				{
+					const auto& src = iw5_gfxmap->dpvs.surfaceMaterials[i].fields;
+					auto& dst = gfxmap->dpvs.surfaceMaterials[i].fields;
+
+					dst.objectId = src.objectId;
+					dst.reflectionProbeIndex = src.reflectionProbeIndex;
+					dst.hasGfxEntIndex = src.hasGfxEntIndex;
+					dst.customIndex = src.customIndex;
+					dst.materialSortedIndex = src.materialSortedIndex;
+					dst.prepass = src.prepass;
+					dst.useHeroLighting = src.useHeroLighting;
+					dst.sceneLightIndex = src.sceneLightIndex;
+					dst.surfType = src.surfType;
+					dst.primarySortKey = src.primarySortKey;
+					dst.unused = 0;
+				}
+			}
+
 			// return converted gfxmap
 			return gfxmap;
 		}
@@ -842,8 +865,9 @@ namespace ZoneTool
 			// fix GfxDrawSurfs
 			iw5_asset->dpvs.surfaceMaterials = new IW5::GfxDrawSurf[iw5_asset->indexCount];
 			memset(iw5_asset->dpvs.surfaceMaterials, 0, sizeof IW5::GfxDrawSurf * iw5_asset->indexCount);
-			for (auto i = 0u; i < iw5_asset->indexCount; i++)
+			for (auto i = 0u; i < asset->surfaceCount; i++)
 			{
+				iw5_asset->dpvs.surfaceMaterials[i].fields.objectId = asset->dpvs.surfaceMaterials[i].fields.objectId;
 				iw5_asset->dpvs.surfaceMaterials[i].fields.reflectionProbeIndex = asset->dpvs.surfaceMaterials[i].fields.reflectionProbeIndex;
 				iw5_asset->dpvs.surfaceMaterials[i].fields.hasGfxEntIndex = asset->dpvs.surfaceMaterials[i].fields.hasGfxEntIndex;
 				iw5_asset->dpvs.surfaceMaterials[i].fields.customIndex = asset->dpvs.surfaceMaterials[i].fields.customIndex;

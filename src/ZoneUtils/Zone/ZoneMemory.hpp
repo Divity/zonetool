@@ -108,7 +108,7 @@ namespace ZoneTool
 			{
 				char buffer[256];
 				_snprintf_s(buffer, sizeof buffer,
-					"ZoneTool just went out of memory, and has to be closed (%llu/%llu).",
+					"ZoneTool just went out of memory, and has to be closed (%zu/%zu).",
 					mem_pos_ + (size * count), memory_size_);
 
 				MessageBoxA(nullptr, buffer, "ZoneTool: Out of Memory", NULL);

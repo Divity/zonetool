@@ -33,6 +33,7 @@ namespace ZoneTool
 			std::int32_t type() override;
 			void write(IZone* zone, ZoneBuffer* buffer) override;
 
+			static std::string clean_name(const std::string& name);
 			static void dump(Material* asset);
 		};
 	}

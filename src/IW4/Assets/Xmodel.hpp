@@ -21,6 +21,7 @@ namespace ZoneTool
 		private:
 			std::string name_;
 			XModel* asset_ = nullptr;
+			XModelSurfs* lod_surfs_[4] = {};
 
 			XModel* parse_new(const std::string& name, ZoneMemory* mem, const std::string& filename);
 			XModel* parse(std::string name, ZoneMemory* mem);

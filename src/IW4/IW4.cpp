@@ -19,6 +19,18 @@ namespace ZoneTool
 		bool isVerifying = false;
 		auto currentDumpingZone = ""s;
 
+		DWORD engine_main_thread_id = 0;
+
+		void take_main_thread()
+		{
+			if (engine_main_thread_id && engine_main_thread_id != GetCurrentThreadId())
+			{
+				Memory(0x1CDE80C).set(engine_main_thread_id);
+			}
+
+			Memory(0x1CDE7FC).set(GetCurrentThreadId());
+		}
+
 		const char* Linker::version()
 		{
 			return "IW4";
@@ -605,7 +617,9 @@ char**>(0x00799278)[type]);
 		{
 			if (this->is_used())
 			{
-				// 
+				engine_main_thread_id = GetCurrentThreadId();
+
+				//
 				Memory(0x470E30).jump(Load_StreamHook);
 				Memory(0x458A20).jump(DB_PushStreamPosHook);
 				Memory(0x4D1D60).jump(DB_PopStreamPosHook);
@@ -636,7 +650,7 @@ char**>(0x00799278)[type]);
 							Memory(0x1CFEEE8).set(bytes_ptr);
 
 							// patch current thread
-							Memory(0x1CDE7FC).set(GetCurrentThreadId());
+							take_main_thread();
 
 							// load gsc
 							Function<void(const char*, int, int)>(0x427D00)(args[1].data(), 0, 0);
@@ -809,7 +823,7 @@ char**>(0x00799278)[type]);
 		std::shared_ptr<IZone> Linker::alloc_zone(const std::string& zone)
 		{
 			// Patch current thread
-			Memory(0x1CDE7FC).set(GetCurrentThreadId());
+			take_main_thread();
 
 			// allocate zone
 			auto ptr = std::make_shared<Zone>(zone, this);

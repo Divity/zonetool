@@ -5055,3 +5055,5 @@ namespace ZoneTool
 		};
 	}
 }
+#pragma pack(pop)
+

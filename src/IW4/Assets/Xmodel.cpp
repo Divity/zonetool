@@ -31,6 +31,19 @@ namespace ZoneTool
 
 		void IXModel::prepare(ZoneBuffer* buf, ZoneMemory* mem)
 		{
+			for (auto i = 0; i < 4; i++)
+			{
+				this->lod_surfs_[i] = nullptr;
+
+				auto* stub = this->asset_->lods[i].surfaces;
+				if (!stub || !stub->name)
+				{
+					continue;
+				}
+
+				this->lod_surfs_[i] = stub->surfs ? stub : IXSurface::parse(stub->name, mem);
+			}
+
 			// fixup scriptstrings
 			auto xmodel = mem->Alloc<XModel>();
 			memcpy(xmodel, this->asset_, sizeof XModel);
@@ -71,14 +84,6 @@ namespace ZoneTool
 				}
 			}
 
-			// XSurfaces
-			for (std::int32_t i = 0; i < 4; i++)
-			{
-				if (data->lods[i].surfaces)
-				{
-					zone->add_asset_of_type(xmodelsurfs, data->lods[i].surfaces->name);
-				}
-			}
 
 			// PhysCollmap
 			if (data->physCollmap)
@@ -182,8 +187,32 @@ namespace ZoneTool
 			for (int i = 0; i < 4; i++)
 			{
 				if (!data->lods[i].surfaces) continue;
-				dest->lods[i].surfaces = reinterpret_cast<XModelSurfs*>(zone->get_asset_pointer(
-					xmodelsurfs, data->lods[i].surfaces->name));
+
+				auto* surfs = this->lod_surfs_[i] ? this->lod_surfs_[i] : data->lods[i].surfaces;
+
+				if (!surfs->surfs)
+				{
+					ZONETOOL_ERROR("[%s]: no surface data for lod %d (\"%s\")!",
+						this->name().data(), i, surfs->name ? surfs->name : "");
+				}
+
+				dest->lods[i].numSurfacesInLod = surfs->numsurfs;
+
+				auto* existing = zone->get_asset_pointer(xmodelsurfs, surfs->name);
+
+				if (existing)
+				{
+					dest->lods[i].surfaces = reinterpret_cast<XModelSurfs*>(existing);
+				}
+				else
+				{
+					buf->push_stream(0);
+					buf->align(3);
+					IXSurface::write_inline(zone, buf, surfs);
+					buf->pop_stream();
+
+					ZoneBuffer::clear_pointer(&dest->lods[i].surfaces);
+				}
 
 				//if (data->lods[i].surfaces && dependingSurfaces[i])
 				//{

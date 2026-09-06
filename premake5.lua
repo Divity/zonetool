@@ -113,6 +113,7 @@ workspace "zonetool"
 	include "src/IW4.lua"
 	include "src/IW5.lua"
 	include "src/CODO.lua"
+	include "src/T4.lua"
 
 	ImgPak:project()
 	ZoneTool:project()
@@ -121,3 +122,4 @@ workspace "zonetool"
 	IW4:project()
 	IW5:project()
 	CODO:project()
+	T4:project()

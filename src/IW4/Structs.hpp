@@ -185,6 +185,39 @@ namespace ZoneTool
 			char rowCount;
 		};
 
+		enum MaterialTextureSource
+		{
+			TEXTURE_SRC_CODE_BLACK = 0x0,
+			TEXTURE_SRC_CODE_WHITE = 0x1,
+			TEXTURE_SRC_CODE_IDENTITY_NORMAL_MAP = 0x2,
+			TEXTURE_SRC_CODE_MODEL_LIGHTING = 0x3,
+			TEXTURE_SRC_CODE_LIGHTMAP_PRIMARY = 0x4,
+			TEXTURE_SRC_CODE_LIGHTMAP_SECONDARY = 0x5,
+			TEXTURE_SRC_CODE_SHADOWMAP_SUN = 0x6,
+			TEXTURE_SRC_CODE_SHADOWMAP_SPOT = 0x7,
+			TEXTURE_SRC_CODE_FEEDBACK = 0x8,
+			TEXTURE_SRC_CODE_RESOLVED_POST_SUN = 0x9,
+			TEXTURE_SRC_CODE_RESOLVED_SCENE = 0xA,
+			TEXTURE_SRC_CODE_POST_EFFECT_0 = 0xB,
+			TEXTURE_SRC_CODE_POST_EFFECT_1 = 0xC,
+			TEXTURE_SRC_CODE_LIGHT_ATTENUATION = 0xD,
+			TEXTURE_SRC_CODE_OUTDOOR = 0xE,
+			TEXTURE_SRC_CODE_FLOATZ = 0xF,
+			TEXTURE_SRC_CODE_PROCESSED_FLOATZ = 0x10,
+			TEXTURE_SRC_CODE_RAW_FLOATZ = 0x11,
+			TEXTURE_SRC_CODE_HALF_PARTICLES = 0x12,
+			TEXTURE_SRC_CODE_HALF_PARTICLES_Z = 0x13,
+			TEXTURE_SRC_CODE_CASE_TEXTURE = 0x14,
+			TEXTURE_SRC_CODE_CINEMATIC_Y = 0x15,
+			TEXTURE_SRC_CODE_CINEMATIC_CR = 0x16,
+			TEXTURE_SRC_CODE_CINEMATIC_CB = 0x17,
+			TEXTURE_SRC_CODE_CINEMATIC_A = 0x18,
+			TEXTURE_SRC_CODE_REFLECTION_PROBE = 0x19,
+			TEXTURE_SRC_CODE_ALTERNATE_SCENE = 0x1A,
+
+			TEXTURE_SRC_CODE_COUNT
+		};
+
 		union MaterialArgumentDef
 		{
 			float* literalConst;
@@ -3137,10 +3170,11 @@ namespace ZoneTool
 				};
 			};
 
-			int unkn;
 			unsigned __int16 childCount; // 2
 			unsigned __int16 surfaceCount; // 2
 			unsigned __int16 startSurfIndex; // 2
+			unsigned __int16 surfaceCountNoDecal;
+			unsigned __int16 startSurfIndexNoDecal;
 			unsigned __int16 smodelIndexCount; // 2
 			unsigned __int16* smodelIndexes; // 4
 			int childrenOffset; // 4

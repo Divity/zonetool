@@ -36,7 +36,6 @@ for tag, b in RAW.items():
     u16 = b.view("<u2")
     def bad(a):
         return 100.0 * (~np.isfinite(a)).mean()
-    # a "sane" float population has no NaN/Inf and a moderate dynamic range
     print("  %-13s f16: %5.2f%% non-finite, |max| %10.4g | f32: %5.2f%% non-finite, |max| %10.4g"
           % (tag, bad(f16), np.abs(f16[np.isfinite(f16)]).max(),
              bad(f32), np.abs(f32[np.isfinite(f32)]).max() if np.isfinite(f32).any() else 0))
@@ -77,9 +76,7 @@ for tag, a in A.items():
     x = a[:, :27]
     x = x[np.abs(x).sum(axis=1) > 0]
     c = np.corrcoef(x.T)
-    # reading A: 3 groups of 9  -> members of a triple are (i, i+9, i+18)
     triples_9 = [abs(c[i, i + 9]) for i in range(9)] + [abs(c[i + 9, i + 18]) for i in range(9)]
-    # reading B: 9 groups of 3  -> members of a triple are (3i, 3i+1, 3i+2)
     triples_3 = [abs(c[3 * i, 3 * i + 1]) for i in range(9)] + [abs(c[3 * i + 1, 3 * i + 2]) for i in range(9)]
     print("  %-13s mean|corr| for stride-9 triples %.3f   for stride-3 triples %.3f"
           % (tag, np.mean(triples_9), np.mean(triples_3)))
@@ -106,7 +103,7 @@ for tag, a in A.items():
         norm = [r / rms[0] for r in rms]
         print("  %-13s %s  RMS/RMS[0]: %s" % (tag, name,
               " ".join("%d:%.3f" % (k, v) for k, v in enumerate(norm))))
-    break  # one map is enough to show the shape; the loop below covers all
+    break
 
 print()
 for tag, a in A.items():

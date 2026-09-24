@@ -15,7 +15,7 @@ so probeData sits at defaultLightGridColors + 752.
 import struct, sys, os, glob
 
 ROW = struct.pack("<fff", 0.0, 0.0, 0.21875)
-DEFAULT_COLORS = ROW * 56          # 672 bytes
+DEFAULT_COLORS = ROW * 56
 SKY_COLORS = b"\x00" * 672
 
 FIELDS = [

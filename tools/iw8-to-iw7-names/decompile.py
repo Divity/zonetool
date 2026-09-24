@@ -1,5 +1,3 @@
-# Decompile a fixed list of addresses and write them to one file.
-# Usage: idat.exe -A -Lxx.log -S"decompile.py <out.c> <ea>[,<ea>...]" <db.i64>
 import idaapi, idc, ida_hexrays, ida_funcs, ida_name
 import sys
 

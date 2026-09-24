@@ -14,12 +14,6 @@ namespace ZoneTool::IW5
 {
 	namespace IW7Converter
 	{
-		// IW5 model textures are .iwi files, not zone data, so they never reach GenerateIW7GfxImage.
-		// The game's own filesystem resolves them out of main\iw_*.iwd, so read them through that
-		// rather than touching the disk directly.
-		//
-		// Everything below is measured against the IW7 linker's own output for .iwi-sourced images
-		// (D:\Games\PC\IW7\dump\mp_test_h1\images); see docs/iw5-iw7-model-textures.md.
 		namespace
 		{
 			enum IwiFormat : std::uint8_t
@@ -34,14 +28,9 @@ namespace ZoneTool::IW5
 				IWI_DXT5 = 13,
 				IWI_DXN = 14,
 
-				// not an .iwi code: marks a resident D3DFMT_A8R8G8B8 / X8R8G8B8 surface
 				IWI_D3D_ARGB = 200,
 			};
 
-			// Alpha written into a DXT1 specular map, which has no alpha channel of its own. IW7
-			// reads that channel as gloss, and an absent one samples as 1.0 - every surface comes
-			// out mirror-like. IW3's combined "~spec-rgb&cos-l-11" images are DXT5 and already
-			// carry a real gloss field, so this only applies to the uncombined ones.
 			constexpr std::uint8_t iwi_default_gloss = 64;
 
 			enum IwiFlags
@@ -70,7 +59,7 @@ namespace ZoneTool::IW5
 				}
 
 				const auto* b = reinterpret_cast<const std::uint8_t*>(file.data());
-				if (b[3] <= 6) // IW3
+				if (b[3] <= 6)
 				{
 					out.format = b[4];
 					out.flags = b[5];
@@ -79,7 +68,7 @@ namespace ZoneTool::IW5
 					std::memcpy(&out.depth, b + 10, 2);
 					out.data_offset = 28;
 				}
-				else // IW4 / IW5
+				else
 				{
 					std::memcpy(&out.flags, b + 4, 4);
 					out.format = b[8];
@@ -116,8 +105,6 @@ namespace ZoneTool::IW5
 				}
 			}
 
-			// Largest level first. A .iwi stores the chain the other way round - that is the end
-			// fileSizeForPicmip truncates from - and IW7 wants it in D3D subresource order.
 			std::vector<std::size_t> mip_sizes(const iwi_header& hdr)
 			{
 				std::vector<std::size_t> sizes;
@@ -141,8 +128,6 @@ namespace ZoneTool::IW5
 				}
 				return sizes;
 			}
-
-			// ---- block codecs ------------------------------------------------------------------
 
 			void bc4_decode(const std::uint8_t* block, float out[16])
 			{
@@ -180,7 +165,6 @@ namespace ZoneTool::IW5
 				}
 			}
 
-			// 8-value mode (a0 > a1), which is what the source data already uses.
 			void bc4_encode(const float values[16], std::uint8_t* out)
 			{
 				float fmin = values[0], fmax = values[0];
@@ -192,7 +176,7 @@ namespace ZoneTool::IW5
 
 				int hi = std::clamp(static_cast<int>(std::lround(fmax)), 0, 255);
 				int lo = std::clamp(static_cast<int>(std::lround(fmin)), 0, 255);
-				if (hi == lo) // a0 must stay strictly above a1 or the 6-value mode is selected
+				if (hi == lo)
 				{
 					if (hi < 255) { hi++; }
 					else if (lo > 0) { lo--; }
@@ -204,7 +188,6 @@ namespace ZoneTool::IW5
 				{
 					const auto t = std::clamp(
 						static_cast<int>(std::lround((values[k] - lo) * 7.0f / span)), 0, 7);
-					// palette order is a0, a1, then six lerps running from a0 toward a1
 					const std::uint64_t sel = (t == 7) ? 0 : ((t == 0) ? 1 : static_cast<std::uint64_t>(8 - t));
 					bits |= sel << (3 * k);
 				}
@@ -245,44 +228,6 @@ namespace ZoneTool::IW5
 				}
 			}
 
-			// ---- IW5 DXT5 normal -> IW7 BC7 --------------------------------------------------
-			//
-			// Every one of the 458 semantic-5 images across the stock IW7 dumps is BC7_UNORM. Not
-			// one is BC5 of either signedness, and that is not a tolerance the loader happens to
-			// have - it is what the world shader is built around, so feeding it BC5_SNORM kills
-			// the surface's response to light outright:
-			//
-			//   BC7_UNORM hands the shader [0, 1] and it decodes n.xy = 2v - 1, so a flat normal
-			//   stored as 0.5 comes back as 0. BC5_SNORM hands it [-1, 1] already; put that
-			//   through the same 2v - 1 and a flat normal (0) becomes -1. Every normal ends up
-			//   (-1, -1) with z = sqrt(1 - 1 - 1) clamped to 0, lying flat in the tangent plane,
-			//   and dot(N, sun) collapses to nothing. That is the "sunlight does not affect
-			//   materials" symptom on any technique carrying n0; techniques without it never
-			//   sample the normal, which is why they looked correct.
-			//
-			// Channel layout, decoded from mp_afghan's metal_painted_white_01_n - a resident 4x4
-			// flat normal, BC7 mode 5, every texel RGBA (255, 128, 0, 129):
-			//
-			//   R = 255   constant          G = normal Y
-			//   B = 0     constant          A = normal X
-			//
-			// which is the same pairing the packed _ng maps use (R gloss, G normal Y, B occlusion,
-			// A normal X) with R and B sitting at their defaults. IW5's DXT5 normal already keeps
-			// X in alpha and Y in the greyscale colour block, so both components pass straight
-			// across with no swap.
-			//
-			// That pairing is the physically consistent one too, independently of what IW7 wants: a
-			// tangent-space normal is a gradient field, so dX/dy - dY/dx has to vanish. Measured on
-			// the level-0 source of all 19 normal maps in mp_test_h1, X=alpha / Y=colour gives a
-			// curl RMS of 1.4-13.2 against 2.0-72.1 for the transposed reading (case_normal 1.80
-			// against 13.18). Every one of them says alpha is X. The IW7 linker transposes them,
-			// which is worth knowing if its output is ever used as a reference.
-			//
-			// Mode 5 is the mode stock uses, and for good reason: it gives colour and alpha their
-			// own index sets. G and A here are two independent normal components, so mode 6's
-			// single shared index set would force them along one line and ruin both. Rotation
-			// stays 0 - stock's block used rotation 2, but that only decides which channel the
-			// encoder parks in the alpha slot, and either choice decodes the same.
 			void bc4_decode_alpha(const std::uint8_t* block, std::uint8_t out[16])
 			{
 				const int a0 = block[0];
@@ -326,7 +271,6 @@ namespace ZoneTool::IW5
 				return (a * (64 - w) + b * w + 32) >> 6;
 			}
 
-			// Colour endpoints are stored in 7 bits and expanded back as (v << 1) | (v >> 6).
 			int bc7_quantize7(int value)
 			{
 				return std::clamp((value * 127 + 127) / 255, 0, 127);
@@ -337,10 +281,6 @@ namespace ZoneTool::IW5
 				return (value << 1) | (value >> 6);
 			}
 
-			// Picks the 2-bit index per texel along the endpoint line, then honours the anchor
-			// rule - the first index of each set is stored a bit short, so it has to stay under 2.
-			// Swapping the endpoints and mirroring the indices describes the same line backwards,
-			// and the weight table is symmetric about 32, so that is exact.
 			void bc7_fit(const std::uint8_t* values, int& lo, int& hi, int indices[16],
 				bool endpoints_are_7bit)
 			{
@@ -411,15 +351,13 @@ namespace ZoneTool::IW5
 				int alpha_indices[16];
 				bc7_fit(alpha, a_lo, a_hi, alpha_indices, false);
 
-				// R and B are constants, so their endpoints collapse and they ride the colour
-				// index set without disturbing green.
 				const auto r7 = bc7_quantize7(255);
 				const auto b7 = bc7_quantize7(0);
 
 				std::memset(out, 0, 16);
 				bc7_bit_writer bits{ out };
-				bits.put(1 << 5, 6);            // mode 5: five zero bits then a one
-				bits.put(0, 2);                 // rotation
+				bits.put(1 << 5, 6);
+				bits.put(0, 2);
 				bits.put(r7, 7); bits.put(r7, 7);
 				bits.put(g0, 7); bits.put(g1, 7);
 				bits.put(b7, 7); bits.put(b7, 7);
@@ -438,10 +376,10 @@ namespace ZoneTool::IW5
 					const auto* in = src + i * 16;
 
 					std::uint8_t x[16];
-					bc4_decode_alpha(in, x);        // IW5 keeps normal X in the alpha half
+					bc4_decode_alpha(in, x);
 
 					float y_float[16];
-					bc1_decode_green(in + 8, y_float);   // and normal Y in the greyscale colour half
+					bc1_decode_green(in + 8, y_float);
 
 					std::uint8_t y[16];
 					for (int t = 0; t < 16; t++)
@@ -453,8 +391,6 @@ namespace ZoneTool::IW5
 				}
 			}
 
-			// BC3 is a BC4 alpha block followed by a BC1 colour block, so the colour half of a DXT1
-			// source copies verbatim and only the constant alpha block has to be synthesised.
 			void dxt1_to_bc3(const std::uint8_t* src, std::uint8_t* dst, std::size_t blocks,
 				std::uint8_t gloss)
 			{
@@ -469,36 +405,27 @@ namespace ZoneTool::IW5
 			}
 		}
 
-		// A resident image (IW3/IW4 zones, and IW5 map images) stores its format as a D3DFORMAT,
-		// while an .iwi header stores the IMG_FORMAT enum. The two ranges do not overlap, so accept
-		// either and normalise onto the .iwi codes the converter below works in.
 		std::uint8_t normalize_format(int format)
 		{
 			switch (static_cast<unsigned int>(format))
 			{
-			case 0x31545844: return IWI_DXT1;        // 'DXT1'
-			case 0x33545844: return IWI_DXT3;        // 'DXT3'
-			case 0x35545844: return IWI_DXT5;        // 'DXT5'
-			case 0x32495441: return IWI_DXN;         // 'ATI2'
-			case 0x15:                               // D3DFMT_A8R8G8B8
-			case 0x16: return IWI_D3D_ARGB;          // D3DFMT_X8R8G8B8
-			case 0x32: return IWI_BITMAP_LUMINANCE;  // D3DFMT_L8
+			case 0x31545844: return IWI_DXT1;
+			case 0x33545844: return IWI_DXT3;
+			case 0x35545844: return IWI_DXT5;
+			case 0x32495441: return IWI_DXN;
+			case 0x15:
+			case 0x16: return IWI_D3D_ARGB;
+			case 0x32: return IWI_BITMAP_LUMINANCE;
 			default: break;
 			}
 			return (format > 0 && format <= 19) ? static_cast<std::uint8_t>(format) : 0;
 		}
 
-		// Splits a mip chain stored smallest level first, which is how both an .iwi payload and a
-		// resident loadDef are laid out. Returns the levels present, largest first.
-		//
-		// The count matters and cannot be assumed to be the whole chain: a picmip-truncated file has
-		// lost its largest levels off the end, and an image built without mipmaps holds only the
-		// largest one. Both are identified by an exact size match rather than guessed at.
 		bool split_levels(const std::vector<std::size_t>& sizes, std::size_t available,
 			std::vector<std::size_t>& present, std::size_t& total)
 		{
 			std::size_t acc = 0;
-			std::vector<std::size_t> suffix; // smallest first
+			std::vector<std::size_t> suffix;
 			for (auto it = sizes.rbegin(); it != sizes.rend(); ++it)
 			{
 				suffix.push_back(*it);
@@ -515,7 +442,7 @@ namespace ZoneTool::IW5
 				}
 			}
 
-			if (!sizes.empty() && available == sizes[0]) // single level, no mipmaps
+			if (!sizes.empty() && available == sizes[0])
 			{
 				present.assign(1, sizes[0]);
 				total = sizes[0];
@@ -535,8 +462,6 @@ namespace ZoneTool::IW5
 
 			const auto sizes = mip_sizes(hdr);
 
-			// A cube is six faces of the same chain. Trust the size over the flag: the cubemap bit
-			// reaches this code through several struct casts, but 6 * chain is unambiguous.
 			std::size_t faces = 1;
 			std::vector<std::size_t> present;
 			std::size_t total = 0;
@@ -562,7 +487,7 @@ namespace ZoneTool::IW5
 			const auto* blob = data + (available - total * faces);
 
 			DXGI_FORMAT dxgi;
-			std::size_t out_size = total;   // per face; multiplied by the face count below
+			std::size_t out_size = total;
 			bool transcode_normal = false;
 			bool transcode_specular = false;
 
@@ -575,7 +500,7 @@ namespace ZoneTool::IW5
 			{
 				dxgi = DXGI_FORMAT_BC3_UNORM;
 				transcode_specular = true;
-				out_size = total * 2; // 8-byte BC1 blocks become 16-byte BC3 blocks
+				out_size = total * 2;
 			}
 			else
 			{
@@ -589,9 +514,8 @@ namespace ZoneTool::IW5
 				case IWI_BITMAP_LUMINANCE_ALPHA: dxgi = DXGI_FORMAT_R8G8_UNORM; break;
 				case IWI_BITMAP_LUMINANCE:
 				case IWI_BITMAP_ALPHA: dxgi = DXGI_FORMAT_R8_UNORM; break;
-				case IWI_D3D_ARGB: dxgi = DXGI_FORMAT_R8G8B8A8_UNORM; break; // swizzled below
+				case IWI_D3D_ARGB: dxgi = DXGI_FORMAT_R8G8B8A8_UNORM; break;
 				case IWI_BITMAP_RGB:
-					// no 24-bit DXGI format; widened to RGBA below
 					dxgi = DXGI_FORMAT_R8G8B8A8_UNORM;
 					out_size = (total / 3) * 4;
 					break;
@@ -603,7 +527,6 @@ namespace ZoneTool::IW5
 
 			auto* pixels = mem.allocate<std::uint8_t>(static_cast<unsigned int>(out_size * faces));
 
-			// Source levels run smallest first; the destination wants largest first.
 			std::size_t src_off = 0;
 			std::vector<std::size_t> src_offsets(present.size());
 			for (std::size_t i = present.size(); i-- > 0; )
@@ -612,17 +535,6 @@ namespace ZoneTool::IW5
 				src_off += present[i];
 			}
 
-			// Destination face order is D3D subresource order - face 0's whole chain, then face 1's
-			// - measured on mp_credits_s1\_reflection_probe1, where downsampling level 0 matches
-			// level 1 at +0.9986 face-major against +0.9602 and +0.9883 for the two mip-major
-			// readings.
-			//
-			// The source side is the half that is argued rather than measured: no cube .iwi exists
-			// in either image tree to check against, and fileSizeForPicmip only makes sense if
-			// truncating the end drops the largest level across all six faces, i.e. the faces sit
-			// together inside each level. It does not matter for a single-level image, which is
-			// what every stock IW7 sky cube is. Flip this if a cube comes out with its faces
-			// shuffled.
 			constexpr bool source_is_mip_major = true;
 
 			std::size_t dst_off = 0;
@@ -636,7 +548,6 @@ namespace ZoneTool::IW5
 
 				if (transcode_normal)
 				{
-					// DXT5 and BC7 are both 16 bytes a block, so the chain keeps its size.
 					dxt5_to_bc7_normal(in, pixels + dst_off, len / 16);
 					dst_off += len;
 				}
@@ -647,7 +558,6 @@ namespace ZoneTool::IW5
 				}
 				else if (format == IWI_D3D_ARGB)
 				{
-					// D3DFMT_A8R8G8B8 is 0xAARRGGBB, i.e. B G R A in memory
 					for (std::size_t q = 0; q < len / 4; q++)
 					{
 						pixels[dst_off + q * 4 + 0] = in[q * 4 + 2];
@@ -749,10 +659,9 @@ namespace ZoneTool::IW5
 			std::size_t total = 0;
 			if (!split_levels(mip_sizes(shape), available, present, total))
 			{
-				return false;   // cube maps and odd payloads are not packing sources
+				return false;
 			}
 
-			// the source stores the chain smallest first, so walk it backwards
 			const auto* blob = data + (available - total);
 			std::vector<std::size_t> offsets(present.size());
 			std::size_t off = 0;
@@ -783,7 +692,7 @@ namespace ZoneTool::IW5
 				return nullptr;
 			}
 
-			const auto cube = asset->mapType == 5 /* MAPTYPE_CUBE */
+			const auto cube = asset->mapType == 5
 				|| (load_def->flags & IWI_FLAG_CUBEMAP) != 0;
 
 			return build_image(asset->name, asset->semantic, format, asset->width, asset->height,
@@ -793,22 +702,9 @@ namespace ZoneTool::IW5
 
 		IW7::GfxImage* convert_iwi(const char* name, std::uint8_t iw5_semantic, allocator& mem)
 		{
-			// Read through the filesystem of whichever game is actually running: an IW3 or IW4 zone
-			// reaches this code as an IW5 GfxImage, but the process is CoD4 or MW2 and the IW5
-			// addresses would be wrong.
 			std::function read_file = filesystem_read_big_file;
 			if (get_linker_mode() == linker_mode::iw4) read_file = ZoneTool::IW4::filesystem_read_big_file;
 			if (get_linker_mode() == linker_mode::iw3) read_file = ZoneTool::IW3::filesystem_read_big_file;
-
-			//auto filename_str = va("images/%s.iwi", name);
-			//char filename_buf[256]{};
-			//strcpy(filename_buf, filename_str.data());
-			//const char* filename = filename_buf;
-			//const auto file = read_file(filename);
-			//if (file.empty())
-			//{
-			//	return nullptr;
-			//}
 
 			auto file = read_file(va("images/%s.iwi", name).data());
 			if (file.empty())

@@ -4469,9 +4469,9 @@ namespace ZoneTool::IW7
 		bool spawnActive;
 		char unused3[1];
 		short instanceIndex;
-		short unk4; // reserved index 0-64
-		short unk5; // priority? 1-4
-		short unk6; // contents maybe
+		short unk4;
+		short unk5;
+		short unk6;
 		char unused4[4];
 		DynEntityLinkToDef PTR64 linkTo;
 		bool noPhysics;
@@ -4580,12 +4580,12 @@ namespace ZoneTool::IW7
 		vec3_t origin;
 		vec3_t angles;
 		unsigned int partStateIndex;
-		short entityId; // runtime
+		short entityId;
 		short padding1;
 		int unk04;
-		bool needsInitialization; // runtime
-		bool needsShutdown; // runtime
-		bool isInitialized; // runtime
+		bool needsInitialization;
+		bool needsShutdown;
+		bool isInitialized;
 		char padding2;
 		ScriptableModelData modelData;
 		unsigned int eventStreamBufferSize;
@@ -4596,13 +4596,13 @@ namespace ZoneTool::IW7
 	struct ScriptableInstanceContextHeader
 	{
 		ScriptableInstanceContext context;
-		int unk02[4]; // indexes?
+		int unk02[4];
 	}; assert_sizeof(ScriptableInstanceContextHeader, 128);
 
 	struct ScriptableInstanceContextHeaderLocalClient
 	{
 		ScriptableInstanceContext context;
-		int unk02[10]; // indexes?
+		int unk02[10];
 	}; assert_sizeof(ScriptableInstanceContextHeaderLocalClient, 152);
 
 	enum ScriptableInstanceFlags
@@ -5193,35 +5193,11 @@ namespace ZoneTool::IW7
 		float origin[3];
 	}; assert_sizeof(GfxGpuLightGridProbePosition, 12);
 
-	// 64 bytes = 32 float16 slots, of which shipped data uses exactly 28. Measured over every
-	// probe of all six authentic maps (mp_paris, mp_afghan, mp_breakneck, cp_zmb, mp_dome_dusk,
-	// mp_frontend - 486k probes) and over every zone fallback:
 	//
-	//   [0..26]  27 L2 spherical-harmonic coefficients, three blocks of nine in CHANNEL order
-	//            (all R, then all G, then all B). Only slots 0, 9 and 18 are non-negative,
-	//            which is what pins the layout as channel-major rather than coefficient-major.
-	//            Within a block the order is the standard real-SH one:
-	//              Y00, Y1-1(y), Y10(z), Y11(x), Y2-2(xy), Y2-1(yz), Y20, Y21(xz), Y22
-	//            Slot 2 of each block carries the vertical term - reconstructing radiance under
-	//            this ordering makes looking up 59x brighter than looking down on mp_paris and
-	//            75x on mp_breakneck, where the IW6/H1 ordering (x, y, z) gives 0.52x, i.e. a
-	//            brighter ground than sky. It also has the lowest reconstruction negativity of
-	//            the candidate orderings.
-	//   [27]     sky/sun visibility in [0, 1]. Genuinely per-probe (0 for 5.5% of mp_frontend's
-	//            probes up to 42.3% of cp_zmb's), and exactly 1.0 in every zone fallback.
-	//   [28..31] zero in every shipped probe and every shipped zone fallback, without exception.
 	//
-	// The coeffs/pad SPLIT is not a judgement call - it comes from the engine's own reflection.
-	// IW8's Load_ProcessStructLayout_GfxSHProbeData registers:
-	//     Load_RegisterStructSize("GfxSHProbeData", 0xC9BD7AA6, 0x40, 0x40)
-	//       member "coeffs", ushort, offset 0,    size 0x3A (58 bytes), count 0x1D (29)
-	//       member "pad",    ushort, offset 0x3A, size 6,               count 3
-	// and IW8's own type export declares exactly `coeffs[29]; pad[3];`. So slot 28 IS a
-	// coefficient as far as the engine is concerned, even though it is zero in every shipped
-	// probe of every map - "always zero in the data" is not the same claim as "padding".
 	struct GfxSHProbeData
 	{
-		unsigned __int16 coeffs[29]; // [0..26] SH, [27] sky visibility, [28] always 0 in shipped data
+		unsigned __int16 coeffs[29];
 		unsigned __int16 pad[3];
 	}; assert_sizeof(GfxSHProbeData, 64);
 
@@ -5261,12 +5237,12 @@ namespace ZoneTool::IW7
 	{
 		unsigned int gpuVisibleProbesCount;
 		GfxGpuLightGridProbePosition PTR64 gpuVisibleProbePositions;
-		GfxSHProbeData PTR64 gpuVisibleProbesData; // 64 * (count * 0x2000)
+		GfxSHProbeData PTR64 gpuVisibleProbesData;
 		void PTR64 gpuVisibleProbesBuffer;
 		void PTR64 gpuVisibleProbesView;
 		void PTR64 gpuVisibleProbesRWView;
 		unsigned int probeCount;
-		GfxSHProbeData PTR64 probes; // 64 * count
+		GfxSHProbeData PTR64 probes;
 		void PTR64 probesBuffer;
 		void PTR64 probesView;
 		void PTR64 probesRWView;
@@ -5283,7 +5259,7 @@ namespace ZoneTool::IW7
 		GfxGpuLightGridTetrahedronNeighbors PTR64 tetrahedronNeighbors;
 		void PTR64 tetrahedronNeighborsBuffer;
 		void PTR64 tetrahedronNeighborsView;
-		GfxGpuLightGridTetrahedronVisibility PTR64 tetrahedronVisibility; // 64 * count
+		GfxGpuLightGridTetrahedronVisibility PTR64 tetrahedronVisibility;
 		void PTR64 tetrahedronVisibilityBuffer;
 		void PTR64 tetrahedronVisibilityView;
 		unsigned int voxelStartTetrahedronCount;
@@ -5351,7 +5327,7 @@ namespace ZoneTool::IW7
 		GfxVoxelInternalNode PTR64 voxelInternalNodeArray;
 		GfxVoxelLeafNode PTR64 voxelLeafNodeArray;
 		unsigned short PTR64 lightListArray;
-		unsigned int PTR64 voxelInternalNodeDynamicLightList; // 2 * count
+		unsigned int PTR64 voxelInternalNodeDynamicLightList;
 		char __pad0[24];
 	}; assert_sizeof(GfxVoxelTree, 112);
 	assert_offsetof(GfxVoxelTree, voxelTreeHeader, 40);
@@ -5362,7 +5338,7 @@ namespace ZoneTool::IW7
 		unsigned int indexCount;
 		unsigned short PTR64 indices;
 		unsigned int vertexCount;
-		char PTR64 vertices; // 32 * count
+		char PTR64 vertices;
 		void PTR64 indexBuffer;
 		void PTR64 vertexBuffer;
 	}; assert_sizeof(GfxFrustumLights, 48);
@@ -5387,11 +5363,11 @@ namespace ZoneTool::IW7
 	struct GfxWorldLightLists
 	{
 		unsigned int surfaceListOffsetCount;
-		unsigned int PTR64 surfaceListOffsets; // per static surface: offset into lists
+		unsigned int PTR64 surfaceListOffsets;
 		unsigned int smodelListOffsetCount;
-		unsigned int PTR64 smodelListOffsets; // per static model: offset into lists
+		unsigned int PTR64 smodelListOffsets;
 		unsigned int listsSize;
-		unsigned short PTR64 lists; // pool: [count][count primary light indices...]
+		unsigned short PTR64 lists;
 	}; assert_sizeof(GfxWorldLightLists, 48);
 
 	struct GfxBrushModelWritable
@@ -8642,36 +8618,35 @@ namespace ZoneTool::IW7
 		PARTICLE_STATE_DEF_FLAG_HAS_ROTATION_3D_CURVE = 0x20,
 		PARTICLE_STATE_DEF_FLAG_HAS_ROTATION_1D_INIT = 0x40,
 		PARTICLE_STATE_DEF_FLAG_HAS_ROTATION_3D_INIT = 0x80, // c
-		// values below were checked against 1988 stock vfx (each bit tracks one module) and the IW7 runtime
-		PARTICLE_STATE_DEF_FLAG_HAS_VELOCITY_CURVE_LOCAL = 0x100, // VELOCITY_GRAPH
-		PARTICLE_STATE_DEF_FLAG_HAS_VELOCITY_CURVE_WORLD = 0x200, // VELOCITY_GRAPH with USE_WORLD_SPACE
-		PARTICLE_STATE_DEF_FLAG_0x400 = 0x400, // only ever set alongside INIT_MATERIAL, meaning unknown
-		PARTICLE_STATE_DEF_FLAG_0x800 = 0x800, // subset of 0x400, meaning unknown
-		PARTICLE_STATE_DEF_FLAG_USE_PHYSICS = 0x1000, // PHYSICS_LIGHT, runtime kills physics particles through it
+		PARTICLE_STATE_DEF_FLAG_HAS_VELOCITY_CURVE_LOCAL = 0x100,
+		PARTICLE_STATE_DEF_FLAG_HAS_VELOCITY_CURVE_WORLD = 0x200,
+		PARTICLE_STATE_DEF_FLAG_0x400 = 0x400,
+		PARTICLE_STATE_DEF_FLAG_0x800 = 0x800,
+		PARTICLE_STATE_DEF_FLAG_USE_PHYSICS = 0x1000,
 		PARTICLE_STATE_DEF_FLAG_MIRROR_TEXTURE_HORIZONTALLY = 0x2000, // c
 		PARTICLE_STATE_DEF_FLAG_MIRROR_TEXTURE_HORIZONTALLY_RANDOM = 0x4000, // c
 		PARTICLE_STATE_DEF_FLAG_MIRROR_TEXTURE_VERTICALLY = 0x8000, // c
 		PARTICLE_STATE_DEF_FLAG_MIRROR_TEXTURE_VERTICALLY_RANDOM = 0x10000, // c
 		PARTICLE_STATE_DEF_FLAG_SORT_PARTICLES = 0x20000,
-		PARTICLE_STATE_DEF_FLAG_HANDLE_ON_IMPACT = 0x40000, // TEST_IMPACT
+		PARTICLE_STATE_DEF_FLAG_HANDLE_ON_IMPACT = 0x40000,
 		PARTICLE_STATE_DEF_FLAG_PLAYER_FACING = 0x80000, // c
 		PARTICLE_STATE_DEF_FLAG_PLAYER_FACING_LOCK_UP_VECTOR = 0x100000, // c
-		PARTICLE_STATE_DEF_FLAG_USE_OCCLUSION_QUERY = 0x200000, // INIT_OCCLUSION_QUERY
+		PARTICLE_STATE_DEF_FLAG_USE_OCCLUSION_QUERY = 0x200000,
 
-		PARTICLE_STATE_DEF_FLAG_HAS_COLOR = 0x400000, // COLOR_GRAPH / COLOR_LERP
-		PARTICLE_STATE_DEF_FLAG_HAS_RAY_CAST_PHYSICS = 0x800000, // PHYSICS_RAY_CAST
+		PARTICLE_STATE_DEF_FLAG_HAS_COLOR = 0x400000,
+		PARTICLE_STATE_DEF_FLAG_HAS_RAY_CAST_PHYSICS = 0x800000,
 
-		PARTICLE_STATE_DEF_FLAG_HAS_EMISSIVE_CURVE = 0x1000000, // EMISSIVE_GRAPH
-		PARTICLE_STATE_DEF_FLAG_HAS_INTENSITY_CURVE = 0x2000000, // INTENSITY_GRAPH
+		PARTICLE_STATE_DEF_FLAG_HAS_EMISSIVE_CURVE = 0x1000000,
+		PARTICLE_STATE_DEF_FLAG_HAS_INTENSITY_CURVE = 0x2000000,
 		PARTICLE_STATE_DEF_FLAG_USE_VECTOR_FIELDS = 0x8000000,
 		PARTICLE_STATE_DEF_FLAG_INHERIT_PARENT_VELOCITY = 0x10000000,
-		PARTICLE_STATE_DEF_FLAG_PLAY_SOUNDS = 0x20000000, // INIT_SOUND, runtime kills sound particles through it
+		PARTICLE_STATE_DEF_FLAG_PLAY_SOUNDS = 0x20000000,
 		PARTICLE_STATE_DEF_FLAG_HAS_CAMERA_OFFSET_POSITION_ONLY = 0x40000000, // c
 		PARTICLE_STATE_DEF_FLAG_ON_IMPACT_USE_SURFACE_TYPE = 0x80000000,
 		PARTICLE_STATE_DEF_FLAG_IS_SPRITE = 0x100000000, // c
 		PARTICLE_STATE_DEF_FLAG_HAS_TRANS_SHADOWS = 0x200000000, // c
-		PARTICLE_STATE_DEF_FLAG_HAS_CHILD_EFFECTS = 0x400000000, // INIT_RUNNER, or test modules that spawn effects
-		PARTICLE_STATE_DEF_FLAG_BLOCKS_SIGHT = 0x800000000, // FX_AddVisBlocker
+		PARTICLE_STATE_DEF_FLAG_HAS_CHILD_EFFECTS = 0x400000000,
+		PARTICLE_STATE_DEF_FLAG_BLOCKS_SIGHT = 0x800000000,
 		PARTICLE_STATE_DEF_FLAG_HAS_ROTATION_CURVE = 0x30,
 		PARTICLE_STATE_DEF_FLAG_HAS_ROTATION_1D = 0x50,
 		PARTICLE_STATE_DEF_FLAG_HAS_ROTATION_3D = 0xA0,

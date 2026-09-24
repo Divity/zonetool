@@ -10,19 +10,8 @@ namespace ZoneTool::IW5
 {
 	namespace IW7Converter
 	{
-		// Builds IW7's packed base-layer textures from IW5/IW3 sources.
-		//
-		// Every real IW7 material's base layer is semantic 14 (_cs) plus semantic 15 (_ng): of
-		// 11,313 stock materials carrying textures, only 247 use semantic 5 or 8 without them and
-		// all 247 are tools_* debug shaders. The separate colour/normal/specular arrangement IW5
-		// uses only ever appears in IW7 as an *extra blend layer*.
-		//
-		// Channel roles and the hemi-octahedral normal encoding are documented, with the
-		// measurements behind them, in docs/iw7-packed-textures.md. GameImageUtil's CoDNOGProcessor
-		// and CoDFusedCSProcessor are the reference for reading these back.
 		namespace
 		{
-			// ---- source decoding ---------------------------------------------------------------
 
 			void bc1_decode_rgba(const std::uint8_t* block, std::uint8_t out[16][4])
 			{
@@ -58,7 +47,7 @@ namespace ZoneTool::IW5
 						p[3][k] = 0.0f;
 					}
 					p[2][3] = 255.0f;
-					p[3][3] = 0.0f;   // the punch-through mode's transparent entry
+					p[3][3] = 0.0f;
 				}
 
 				const unsigned int bits = block[4] | (block[5] << 8) | (block[6] << 16) | (block[7] << 24);
@@ -131,7 +120,7 @@ namespace ZoneTool::IW5
 				const auto bw = std::max(1u, (w + 3) / 4);
 				const auto bh = std::max(1u, (h + 3) / 4);
 
-				if (format == 11) // DXT1
+				if (format == 11)
 				{
 					if (src_size < static_cast<std::size_t>(bw) * bh * 8) return false;
 					for (unsigned int by = 0; by < bh; by++)
@@ -144,7 +133,7 @@ namespace ZoneTool::IW5
 					return true;
 				}
 
-				if (format == 12 || format == 13) // DXT3 / DXT5
+				if (format == 12 || format == 13)
 				{
 					if (src_size < static_cast<std::size_t>(bw) * bh * 16) return false;
 					for (unsigned int by = 0; by < bh; by++)
@@ -163,7 +152,7 @@ namespace ZoneTool::IW5
 									texel[t][3] = static_cast<std::uint8_t>(std::clamp(a[t], 0.0f, 255.0f));
 								}
 							}
-							else // DXT3: 4 bits of explicit alpha per texel
+							else
 							{
 								for (int t = 0; t < 16; t++)
 								{
@@ -177,13 +166,13 @@ namespace ZoneTool::IW5
 				}
 
 				const auto pixels = static_cast<std::size_t>(w) * h;
-				if (format == 1) // BITMAP_RGBA
+				if (format == 1)
 				{
 					if (src_size < pixels * 4) return false;
 					std::memcpy(out.data(), src, pixels * 4);
 					return true;
 				}
-				if (format == 2) // BITMAP_RGB
+				if (format == 2)
 				{
 					if (src_size < pixels * 3) return false;
 					for (std::size_t p = 0; p < pixels; p++)
@@ -195,7 +184,7 @@ namespace ZoneTool::IW5
 					}
 					return true;
 				}
-				if (format == 4 || format == 5) // LUMINANCE / ALPHA
+				if (format == 4 || format == 5)
 				{
 					if (src_size < pixels) return false;
 					for (std::size_t p = 0; p < pixels; p++)
@@ -205,7 +194,7 @@ namespace ZoneTool::IW5
 					}
 					return true;
 				}
-				if (format == 200) // resident D3DFMT_A8R8G8B8, stored B G R A
+				if (format == 200)
 				{
 					if (src_size < pixels * 4) return false;
 					for (std::size_t p = 0; p < pixels; p++)
@@ -219,13 +208,6 @@ namespace ZoneTool::IW5
 				}
 				return false;
 			}
-
-			// ---- BC7 mode 6 encoder ------------------------------------------------------------
-			//
-			// One subset, RGBA, endpoints 7.7.7.7 plus a p-bit each, 4-bit indices. Validated
-			// against a reference implementation on real assembled _ng data: mean error 0.28-1.02
-			// out of 255 across three textures, which is inside the quantisation the DXT sources
-			// already carry.
 
 			const float kW4[16] = { 0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64 };
 
@@ -260,8 +242,6 @@ namespace ZoneTool::IW5
 				}
 			}
 
-			// Dominant axis by power iteration - enough for a 16-texel block and avoids pulling in
-			// an eigensolver. Seeded from the bounding-box diagonal.
 			void principal_axis(const float t[16][4], const float mean[4], float axis[4])
 			{
 				float lo[4], hi[4];
@@ -343,10 +323,6 @@ namespace ZoneTool::IW5
 									pal[k][c] = std::floor((q0[c] * (64.0f - kW4[k]) + q1[c] * kW4[k] + 32.0f) / 64.0f);
 								}
 
-							// The palette is monotonic along the endpoint line, so project onto it
-							// for a starting index and only check the two neighbours. Exhaustively
-							// scanning all 16 entries gives the same answer and is 5x the work,
-							// which matters in a debug build encoding a whole mip chain.
 							float dir[4], dlen = 0.0f;
 							for (int c = 0; c < 4; c++)
 							{
@@ -402,7 +378,6 @@ namespace ZoneTool::IW5
 						std::memcpy(best_idx, pass_idx, sizeof(pass_idx));
 					}
 
-					// least-squares refit of the endpoints against the chosen indices
 					float a = 0.0f, b = 0.0f, d = 0.0f, pv[4]{}, qv[4]{};
 					for (int i = 0; i < 16; i++)
 					{
@@ -428,7 +403,6 @@ namespace ZoneTool::IW5
 					}
 				}
 
-				// the anchor's high index bit is implicit, so index 0 must be <= 7
 				if (best_idx[0] > 7)
 				{
 					for (int c = 0; c < 4; c++) { std::swap(best_v0[c], best_v1[c]); }
@@ -437,7 +411,7 @@ namespace ZoneTool::IW5
 				}
 
 				bits128 bits;
-				bits.put(6, 1, 1);                       // mode 6 marker
+				bits.put(6, 1, 1);
 				int pos = 7;
 				for (int c = 0; c < 4; c++)
 				{
@@ -457,12 +431,6 @@ namespace ZoneTool::IW5
 				std::memcpy(out + 8, &bits.hi, 8);
 			}
 
-			// BC4: one 8-bit channel, 8 bytes a block - two endpoints then sixteen 3-bit
-			// indices. Only the eight-value mode is emitted (red0 > red1), whose palette is the
-			// two endpoints plus six evenly spaced interpolants; the six-value mode buys a hard
-			// 0 and 255 at the cost of two interpolants, which is the wrong trade for an alpha
-			// mask that is mostly flat runs. Endpoints are the block's own min and max, so a
-			// block of one value is exact and a smooth block lands within half a step.
 			void encode_bc4_block(const std::uint8_t v[16], std::uint8_t* out)
 			{
 				std::uint8_t lo = 255, hi = 0;
@@ -475,8 +443,6 @@ namespace ZoneTool::IW5
 				out[0] = hi;
 				out[1] = lo;
 
-				// A flat block leaves red0 == red1, which selects the six-value mode - but there
-				// index 0 still reads red0, so all-zero indices reproduce it exactly.
 				std::uint64_t bits = 0;
 				if (hi > lo)
 				{
@@ -550,9 +516,6 @@ namespace ZoneTool::IW5
 					}
 			}
 
-			// ---- assembly ----------------------------------------------------------------------
-
-			// Nearest-neighbour fetch, so a secondary map of a different size still lines up.
 			const std::uint8_t* sample(const decoded_image& img, std::size_t level,
 				unsigned int x, unsigned int y, unsigned int w, unsigned int h)
 			{
@@ -620,7 +583,7 @@ namespace ZoneTool::IW5
 
 			auto w = static_cast<unsigned int>(src.width);
 			auto h = static_cast<unsigned int>(src.height);
-			for (const auto& level : src.levels)   // largest first
+			for (const auto& level : src.levels)
 			{
 				std::vector<std::uint8_t> rgba;
 				if (!decode_mip(src.format, level.first, level.second, w, h, rgba))
@@ -637,11 +600,6 @@ namespace ZoneTool::IW5
 		IW7::GfxImage* build_packed_cs(const char* name, const decoded_image& colour,
 			const decoded_image* spec, allocator& mem)
 		{
-			// IW5 has no metalness channel, so everything converts as a dielectric: RGB is the
-			// albedo unchanged and alpha sits below GameImageUtil's insulatorSpecRange of 0.1, which
-			// makes the shader read a flat ~0.04 reflectance. 10/255 is what the one resident stock
-			// _cs carries. The IW5 specular *colour* is dropped here - only its gloss survives, in
-			// the paired _ng - because inventing metalness from a bright specular would be a guess.
 			constexpr std::uint8_t dielectric_reflectance = 10;
 
 			std::vector<std::vector<std::uint8_t>> out;
@@ -677,12 +635,6 @@ namespace ZoneTool::IW5
 
 		IW7::GfxImage* build_packed_a(const char* name, const decoded_image& colour, allocator& mem)
 		{
-			// Semantic 16 on a pa0 technique: the opacity the packed pair cannot carry, because
-			// _packed_cs spends its alpha on reflectance. One channel, so BC4 rather than BC7 -
-			// which is also what stock ships (imageFormat 80 on all 2360 stock _packed_a).
-			//
-			// The source is the colour map's own alpha, which is where IW3 and IW5 keep opacity
-			// for a blend material and the cutout mask for an alpha-tested one.
 			std::vector<std::vector<std::uint8_t>> out;
 			auto w = static_cast<unsigned int>(colour.width);
 			auto h = static_cast<unsigned int>(colour.height);
@@ -704,13 +656,8 @@ namespace ZoneTool::IW5
 		IW7::GfxImage* build_packed_ng(const char* name, const decoded_image& normal,
 			const decoded_image* spec, allocator& mem)
 		{
-			// Gloss for materials whose specular carried none. IW3's combined
-			// "~<spec>-rgb&<cos>-l-11" images do carry a real one; a plain DXT1 specular does not,
-			// and neither does a material with no specular at all.
 			constexpr std::uint8_t fallback_gloss = 64;
 
-			// No IW5 source has baked occlusion. 255 is what a stock _ng carries (measured 254.6
-			// +/- 0.5); only the _nog variant has a real AO channel.
 			constexpr std::uint8_t no_occlusion = 255;
 
 			std::vector<std::vector<std::uint8_t>> out;
@@ -725,14 +672,11 @@ namespace ZoneTool::IW5
 					{
 						const auto* n = &normal.mips[level][(static_cast<std::size_t>(y) * w + x) * 4];
 
-						// IW5/IW3 normal: X in alpha, Y in the greyscale colour block, Z implied
 						const auto nx = n[3] / 127.5f - 1.0f;
 						const auto ny = n[1] / 127.5f - 1.0f;
 						const auto nz2 = 1.0f - nx * nx - ny * ny;
 						const auto nz = nz2 > 0.0f ? std::sqrt(nz2) : 0.0f;
 
-						// hemi-octahedron: project onto the octahedron, then rotate 45 degrees so
-						// the diamond |x|+|y| <= 1 fills the whole unit square
 						const auto len = std::fabs(nx) + std::fabs(ny) + nz;
 						const auto inv = len > 1e-6f ? 1.0f / len : 0.0f;
 						const auto px = nx * inv;
@@ -752,9 +696,9 @@ namespace ZoneTool::IW5
 
 						auto* d = &rgba[(static_cast<std::size_t>(y) * w + x) * 4];
 						d[0] = gloss;
-						d[1] = encode(px + py);   // normal X
+						d[1] = encode(px + py);
 						d[2] = no_occlusion;
-						d[3] = encode(px - py);   // normal Y
+						d[3] = encode(px - py);
 					}
 
 				std::vector<std::uint8_t> encoded;

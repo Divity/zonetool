@@ -60,15 +60,8 @@ namespace ZoneTool::IW5
 			return 0;
 		}
 
-		// Stock vfx debris masses are 1-2; nothing stock is lighter than 1.
 		constexpr auto FX_MODEL_PHYSICS_MASS = 1.0f;
 
-		// Real physics bodies for FX_ELEM_USE_MODEL_PHYSICS model elements are OPT-IN
-		// (ZT_FX_MODEL_PHYSICS=1). With the dynamic asset in place the pieces do become
-		// Havok bodies, but two stock behaviours are still missing: the particle's launch
-		// velocity is not handed to the body (chunks drop straight down) and the bodies do
-		// not collide with the world the way clutter dynents do. Both need a stock vfx with
-		// physics decoded first. Until then the ray-cast emulation stays the default.
 		bool fx_model_physics_enabled()
 		{
 			const auto* env = std::getenv("ZT_FX_MODEL_PHYSICS");
@@ -98,7 +91,6 @@ namespace ZoneTool::IW5
 				return IW7::PARTICLE_ELEMENT_TYPE_SPARK_CLOUD;
 				break;
 			case IW5::FX_ELEM_TYPE_SPARKFOUNTAIN:
-				// no IW7 equivalent, is_elem_convertible skips these
 				return IW7::PARTICLE_ELEMENT_TYPE_SPARK_CLOUD;
 				break;
 			case IW5::FX_ELEM_TYPE_MODEL:
@@ -111,7 +103,6 @@ namespace ZoneTool::IW5
 				return IW7::PARTICLE_ELEMENT_TYPE_LIGHT_SPOT;
 				break;
 			case IW5::FX_ELEM_TYPE_SOUND:
-				// IW7 has no sound element, stock plays sounds from an INIT_SOUND module on another type
 				return IW7::PARTICLE_ELEMENT_TYPE_RUNNER;
 				break;
 			case IW5::FX_ELEM_TYPE_DECAL:
@@ -141,8 +132,6 @@ namespace ZoneTool::IW5
 			}
 		}
 
-		// IW7 draw and update code dereferences the element type module (and INIT_MATERIAL for material
-		// elements) without null checks, so an element that can't provide them must not become an emitter
 		bool is_elem_convertible(FxEffectDef* asset, FxElemDef* elem)
 		{
 			if (elem->elemType == FX_ELEM_TYPE_SPARKFOUNTAIN)
@@ -653,11 +642,6 @@ namespace ZoneTool::IW5
 				return;
 			}
 
-			// IW7 size graph is a vector: curves 0-2 are x/y/z, curves 3-5 the second set for randomization.
-			// Which IW5 channel feeds which axis follows FX_GetVisualSampleRouting and stock usage:
-			// sprites/tails/trails/clouds use size[0]/size[1] as x/y, decals are square (size[0] only),
-			// lights pass x as radius and y as intensity to R_AddOmniLightToScene (IW5 scale, 1 when unused),
-			// and models only have scale (stock models fill x or all of xyz).
 			enum class channel { none, size0, size1, scale, scale_or_one };
 			channel axes[3] = { channel::none, channel::none, channel::none };
 
@@ -775,7 +759,6 @@ namespace ZoneTool::IW5
 
 				for (auto i = 0; i < sample_count; i++)
 				{
-					// IW5 stores the second curve as a delta from the first
 					const auto base = get_value(axes[axis], i, false);
 					const auto ampl = get_value(axes[axis], i, true);
 
@@ -965,14 +948,11 @@ namespace ZoneTool::IW5
 
 			if (!local && !world)
 			{
-				// FX_SampleVelocityInFrame only sets these when the graph moves the particle
 				return;
 			}
 
 			if (local && world)
 			{
-				// a velocity graph is either local or world space; keep the frame that moves the particle further
-				// instead of dropping the motion entirely
 				const auto& last = elem->velSamples[sampleCount - 1];
 				const auto length_sq = [](const float* v) { return v[0] * v[0] + v[1] * v[1] + v[2] * v[2]; };
 				const auto local_travel = length_sq(last.local.totalDelta.base);
@@ -1196,7 +1176,6 @@ namespace ZoneTool::IW5
 			const bool has_angles = !is_zero(elem->spawnAngles[0]) || !is_zero(elem->spawnAngles[1]) || !is_zero(elem->spawnAngles[2]);
 			const bool has_rate = !is_zero(elem->angularVelocity[0]) || !is_zero(elem->angularVelocity[1]) || !is_zero(elem->angularVelocity[2]);
 
-			// stock clouds always carry this module
 			const bool is_cloud = elem->elemType == FX_ELEM_TYPE_CLOUD || elem->elemType == FX_ELEM_TYPE_SPARKCLOUD;
 			if (!has_angles && !has_rate && !is_cloud)
 			{
@@ -1209,8 +1188,6 @@ namespace ZoneTool::IW5
 			moduleData.type = module.moduleType;
 			moduleData.m_flags = 0;
 
-			// IW5 stores angular velocity in rad/ms (FX_ConvertElemDef scales degrees by 0.000017453292),
-			// IW7 rates are rad/s (stock values like 8.73 = 500 deg/s). spawn angles are radians in both
 			for (auto i = 0; i < 3; i++)
 			{
 				moduleData.m_rotationRateMin.v[i] = elem->angularVelocity[i].base * 1000.0f;
@@ -1279,16 +1256,11 @@ namespace ZoneTool::IW5
 			moduleData.type = module.moduleType;
 			moduleData.m_flags = 0;
 
-			// stock m_startFrame values are frame counts minus one (3, 7, 15, 63) and 0 otherwise, which reads as
-			// "random start within [0, m_startFrame]"; IW7 has no fixed non-zero start index
 			const auto start = elem->atlas.behavior & FX_ATLAS_START_MASK;
 			module.moduleData.initAtlas.m_startFrame = start == FX_ATLAS_START_RANDOM ? elem->atlas.entryCount - 1 : 0;
 
-			// IW5 loopCount is the editor value + 1 (FX_ConvertAtlas) and only means something with
-			// FX_ATLAS_LOOP_ONLY_N_TIMES, IW7 uses -1 for endless looping
 			module.moduleData.initAtlas.m_loopCount = (elem->atlas.behavior & FX_ATLAS_LOOP_ONLY_N_TIMES) != 0 ? elem->atlas.loopCount : -1;
 
-			// FX_ATLAS_PLAY_OVER_LIFE has no confirmed IW7 encoding yet, fps is kept either way
 			module.moduleData.initAtlas.m_playRate = elem->atlas.fps;
 
 			modules.push_back(module);
@@ -1307,7 +1279,6 @@ namespace ZoneTool::IW5
 			moduleData.type = module.moduleType;
 			moduleData.m_flags = 0;
 
-			// IW5 fadeInRange/fadeOutRange are camera distances, not times; stock decals mostly use 0
 			moduleData.m_fadeInTime = 0;
 			moduleData.m_fadeOutTime = 0;
 			moduleData.m_stoppableFadeOutTime = 0;
@@ -1364,13 +1335,6 @@ namespace ZoneTool::IW5
 			moduleData.type = module.moduleType;
 			moduleData.m_flags = 0;
 
-			// m_usePhysics makes AddModule allocate physics instances that need an IW7 physics
-			// asset on the model -- a DYNAMIC one, or the piece never moves (a compressed-mesh
-			// body cannot be simulated). Models get that asset by being registered here: the
-			// model converter builds one from the model's PhysCollmap, or a bounds box when it
-			// has none, and the IW3 fx dumper re-dumps the model afterwards. This is what stock
-			// does for its vfx debris (spheres / small convexes with mass properties). Elements
-			// without model physics keep the ray-cast emulation.
 			moduleData.m_usePhysics = fx_model_physics_enabled() && (elem->flags & FX_ELEM_USE_MODEL_PHYSICS) != 0;
 			moduleData.m_motionBlurHQ = false;
 			if (moduleData.m_usePhysics)
@@ -1425,8 +1389,6 @@ namespace ZoneTool::IW5
 			moduleData.type = module.moduleType;
 			moduleData.m_flags = 0;
 
-			// sound elements become runners without child effects (stock has a few of those) plus INIT_SOUND,
-			// the runner module is what AddModule stores as the element type module
 			if (elem->elemType == FX_ELEM_TYPE_RUNNER && elem->visualCount)
 			{
 				moduleData.m_linkedAssetList.numAssets = elem->visualCount;
@@ -1466,7 +1428,6 @@ namespace ZoneTool::IW5
 				moduleData.m_linkedAssetList.assetList[idx].sound = allocator.duplicate_string(sound ? sound : "");
 			}
 
-			// the runtime walks sound particles through this flag (KillSoundParticlesAll)
 			state_flags |= IW7::PARTICLE_STATE_DEF_FLAG_PLAY_SOUNDS;
 
 			modules.push_back(module);
@@ -1485,9 +1446,6 @@ namespace ZoneTool::IW5
 			moduleData.type = module.moduleType;
 			moduleData.m_flags = 0;
 
-			// the cloud draw setup reads this module unconditionally and only draws a particle when the curve
-			// value is non-zero, culling with value + max(size.x, size.y); IW5 FX_DrawElem_Cloud does exactly
-			// that with visState.scale, so the curves carry the IW5 scale channel
 			const auto sample_count = elem->visSamples ? elem->visStateIntervalCount + 1 : 0;
 
 			xoxor4d::MinMaxCurveSample range{};
@@ -1532,14 +1490,11 @@ namespace ZoneTool::IW5
 
 		void generate_physics_ray_cast_module(FxElemDef* elem, allocator& allocator, std::vector<IW7::ParticleModuleDef>& modules)
 		{
-			// IW5 only tests collision (and so impact effects / die on touch) with FX_ELEM_USE_COLLISION,
-			// model physics collides on its own
 			if ((elem->flags & (FX_ELEM_USE_COLLISION | FX_ELEM_USE_MODEL_PHYSICS)) == 0)
 			{
 				return;
 			}
 
-			// a model element that is a real physics body does not also ray cast
 			if (elem->elemType == FX_ELEM_TYPE_MODEL && fx_model_physics_enabled()
 				&& (elem->flags & FX_ELEM_USE_MODEL_PHYSICS) != 0)
 			{
@@ -1552,7 +1507,6 @@ namespace ZoneTool::IW5
 			moduleData.type = module.moduleType;
 			moduleData.m_flags = 0;
 
-			// IW5 reflectionFactor is the bounce elasticity in [0, 1]
 			moduleData.m_bounce.min = elem->reflectionFactor.base;
 			moduleData.m_bounce.max = elem->reflectionFactor.base + elem->reflectionFactor.amplitude;
 
@@ -1574,8 +1528,6 @@ namespace ZoneTool::IW5
 
 		void generate_init_material_module(FxElemDef* elem, allocator& allocator, std::vector<IW7::ParticleModuleDef>& modules)
 		{
-			// clouds draw through the InitMaterial module too, and the cloud draw setup
-			// dereferences it without a null check (crash at 0x140D06A50)
 			const bool is_cloud = elem->elemType == FX_ELEM_TYPE_CLOUD || elem->elemType == FX_ELEM_TYPE_SPARKCLOUD;
 			if (elem->elemType != FX_ELEM_TYPE_SPRITE_BILLBOARD && elem->elemType != FX_ELEM_TYPE_SPRITE_ORIENTED && elem->elemType != FX_ELEM_TYPE_TAIL && elem->elemType != FX_ELEM_TYPE_TRAIL && !is_cloud)
 			{
@@ -1716,9 +1668,6 @@ namespace ZoneTool::IW5
 			moduleData.m_spawnType = 0;
 			moduleData.m_volumeCubeRoot = 0.0f;
 
-			// IW5 FX_OffsetSpawnOrigin: radius in the effect's y/z plane, height along the effect's x axis
-			// from base to base + amplitude. the IW7 cylinder is built around z, rotated by m_directionQuat
-			// (stock uses this z->x quat) and then moved by the post-rotation offset (the float4 after m_radius)
 			moduleData.m_hasRotation = true;
 			moduleData.m_rotateCalculatedOffset = false;
 
@@ -1760,7 +1709,6 @@ namespace ZoneTool::IW5
 			moduleData.m_spawnType = 0;
 			moduleData.m_volumeCubeRoot = 0.0f;
 
-			// IW5: random direction, distance in [base, base + amplitude]
 			moduleData.m_radius.min = elem->spawnOffsetRadius.base;
 			moduleData.m_radius.max = elem->spawnOffsetRadius.base + elem->spawnOffsetRadius.amplitude;
 
@@ -1777,7 +1725,6 @@ namespace ZoneTool::IW5
 			moduleData.type = module.moduleType;
 			moduleData.m_flags = 0;
 
-			// IW5 FX_GetSpawnOrigin applies the offset in effect space only with FX_ELEM_SPAWN_RELATIVE_TO_EFFECT
 			if ((elem->flags & FX_ELEM_SPAWN_RELATIVE_TO_EFFECT) == 0 && elem->elemType != FX_ELEM_TYPE_TRAIL)
 			{
 				moduleData.m_flags |= IW7::PARTICLE_MODULE_FLAG_USE_WORLD_SPACE;
@@ -1804,8 +1751,6 @@ namespace ZoneTool::IW5
 
 		void set_light_def(unsigned int& flags, IW7::ParticleLinkedAssetListDef& list, FxElemDef* elem, allocator& allocator)
 		{
-			// every stock light module has exactly one light def (light_fx_default) and HAS_LIGHT_DEFS;
-			// IW5 light elements usually have no GfxLightDef
 			const GfxLightDef* light_def = nullptr;
 			if (elem->visualCount == 1)
 			{
@@ -1868,8 +1813,6 @@ namespace ZoneTool::IW5
 			system_flags |= IW7::PARTICLE_SYSTEM_DEF_FLAG_HAS_LIGHTS;
 			emitter_flags |= IW7::PARTICLE_EMITTER_DEF_FLAG_HAS_LIGHTS;
 
-			// IW7 fovs are radians (stock 0.785 = 45 degrees). IW5 only stores the inner cone as a fraction of
-			// the outer one, the outer fov isn't part of the fx data, so use the common stock value
 			const auto* spot = elem->extended.spotLightDef;
 			moduleData.m_fovOuter = 0.7853981852531433f;
 			moduleData.m_fovInner = spot ? moduleData.m_fovOuter * spot->fovInnerFraction : 0.0f;
@@ -1976,9 +1919,6 @@ namespace ZoneTool::IW5
 
 		void generate_impact_module(FxElemDef* elem, allocator& allocator, std::vector<IW7::ParticleModuleDef>& modules)
 		{
-			// impacts only exist with collision (see generate_physics_ray_cast_module); IW5 kills the particle
-			// only with FX_ELEM_DIE_ON_TOUCH and bounces it otherwise. stock has kill-only impact modules
-			// without assets, which is what die on touch without an impact effect becomes
 			const bool die_on_touch = (elem->flags & FX_ELEM_DIE_ON_TOUCH) != 0;
 			if ((elem->flags & FX_ELEM_USE_COLLISION) == 0 || (!elem->effectOnImpact.handle && !die_on_touch))
 			{
@@ -2075,9 +2015,6 @@ namespace ZoneTool::IW5
 
 			if (looping)
 			{
-				// IW5 spawns one particle every intervalMsec until spawn.looping.count particles were spawned,
-				// 0x7FFFFFFF meaning forever (fx_update.cpp). IW7 rates are particles per second, emitter life 0 is
-				// endless and particleCountMax is the number alive at once (stock: roughly rate * particle life)
 				const auto interval = std::max(elem->spawn.looping.intervalMsec, 1);
 				const auto spawn_rate = 1000.0f / static_cast<float>(interval);
 
@@ -2144,8 +2081,6 @@ namespace ZoneTool::IW5
 			state->flags = 0;
 			state_flags = 0;
 
-			// FX_ELEM_DRAW_WITH_VIEWMODEL has no known IW7 state bit (0x20000000 is INIT_SOUND), collision and
-			// model physics set their bits from generate_physics_ray_cast_module
 			state_flags |= (elem->flags & FX_ELEM_BLOCK_SIGHT) != 0 ? IW7::PARTICLE_STATE_DEF_FLAG_BLOCKS_SIGHT : 0;
 
 			if (!elem_uses_material(elem))
@@ -2155,7 +2090,6 @@ namespace ZoneTool::IW5
 
 			state->moduleGroupDefs = allocator.allocate<IW7::ParticleModuleGroupDef>(IW7::PARTICLE_MODULE_GROUP_COUNT);
 
-			// init modules, ordered like stock: spawn, attributes, element type module, then module enum order
 			{
 				std::vector<IW7::ParticleModuleDef> init_modules{};
 				generate_init_spawn_module(elem, allocator, init_modules);
@@ -2183,7 +2117,6 @@ namespace ZoneTool::IW5
 				set_module_group(state, IW7::PARTICLE_MODULE_GROUP_INIT, init_modules, allocator);
 			}
 
-			// update modules
 			{
 				std::vector<IW7::ParticleModuleDef> update_modules{};
 				generate_color_module(elem, allocator, update_modules);
@@ -2197,7 +2130,6 @@ namespace ZoneTool::IW5
 				set_module_group(state, IW7::PARTICLE_MODULE_GROUP_UPDATE, update_modules, allocator);
 			}
 
-			// test modules
 			{
 				test_module_index = 0;
 
@@ -2222,9 +2154,6 @@ namespace ZoneTool::IW5
 
 			system_flags = 0;
 
-			// elemDefs holds looping, then one-shot, then emission elements. emission elements are copies of the
-			// one-shot elements of effectEmitted (FX_CopyEmittedElemDefs) that IW5 only spawns while a particle
-			// emits; that effect is referenced by generate_emission_module, so they must not become emitters here
 			std::vector<std::pair<FxElemDef*, bool>> elems;
 			const auto elem_count = asset->elemDefCountLooping + asset->elemDefCountOneShot;
 			for (auto elem_index = 0; elem_index < elem_count; elem_index++)

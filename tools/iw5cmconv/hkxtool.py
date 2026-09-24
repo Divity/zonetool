@@ -47,8 +47,6 @@ KEY_SECTION_SHIFT = 8
 DEAD = bytes((0xDE, 0xAD, 0xDE, 0xAD))
 
 
-# --------------------------------------------------------------------------- helpers
-
 def load(path):
     """-> (packfile, data-section bytes, fixup map)"""
     pf = Packfile.load(path)
@@ -119,7 +117,7 @@ def simd_leaves(d, mt, simd):
         ab = [struct.unpack_from("<4f", d, base + i * 16) for i in range(6)]
         dat = struct.unpack_from("<4I", d, base + 96)
         for c in range(4):
-            if ab[0][c] > ab[1][c]:      # inverted AABB = unused slot
+            if ab[0][c] > ab[1][c]:
                 continue
             v = dat[c]
             if v & 1:
@@ -133,8 +131,6 @@ def dead_primitives(d, mt):
     return sum(1 for i in range(mt.primitives.size)
                if d[mt.primitives.data + i * 4: mt.primitives.data + i * 4 + 4] == DEAD)
 
-
-# ----------------------------------------------------------------------------- info
 
 def cmd_info(args):
     for path in expand(args.paths):
@@ -180,8 +176,6 @@ def cmd_info(args):
                   % (mt.domain[0], mt.domain[1], mt.domain[2],
                      mt.domain[4], mt.domain[5], mt.domain[6]))
 
-
-# ---------------------------------------------------------------------------- check
 
 def section_primitive_aabbs(d, mt, s, fixups):
     """AABB of each primitive in a section, in section-local primitive order.
@@ -258,22 +252,6 @@ def cmd_check(args):
             if sl["shapeContents"].size:
                 c = u32(d, sl["shapeContents"].data)
                 want(c != 0xFFFFFFFF, "shapeContents is 0xFFFFFFFF (not a real contents mask)")
-            # A world shape carries a FIXED contents mask in every shipped blob:
-            # 0x29033ED1 / 0x28033ED7 / 0x28033ED1. The top bits 0x28000000 are always
-            # present. Deriving this mask from the source geometry instead produced
-            # 0x08031E41, which loses 0x20000000 -- the world body then did not collide with
-            # the player even though bullet traces still hit it.
-            #
-            # This used to be gated on "triCounts > 0 and convexCounts == 0", which was wrong
-            # in both directions. Every shipped world blob has a non-zero convexCounts (it
-            # counts the mesh's custom primitives, not separate convex shapes), so the rule
-            # never ran on the data it was derived from; and in an ents blob the per-brush-
-            # model mesh shapes DO match that gate, so it false-failed stock ents blobs --
-            # 4 on mp_afghan, 24 on cp_zmb.
-            #
-            # A world blob is discriminated by its object table instead: exactly one
-            # compressed mesh and no compound shapes. Ents blobs always carry compounds
-            # (or, when empty, no shapes at all).
             classes = [n for _s, _o, n in pf.objects()]
             is_world_blob = (classes.count("hknpCompressedMeshShape") == 1
                              and "hknpDynamicCompoundShape" not in classes
@@ -286,10 +264,6 @@ def cmd_check(args):
                      "world mask -- the world body will not collide with the player"
                      % (sc, WORLD_CONTENTS_REQUIRED & ~sc))
 
-            # Every non-empty root array must have a real data pointer. A writer that forgets
-            # to record an array's offset leaves it pointing at 0 (or at another array's
-            # data), and the runtime then reads zeros -- which is how shapeContents silently
-            # became 0x00000000 and the world stopped colliding.
             for k in ("shapes", "shapeIndices", "shapeNames", "vertCounts", "triCounts",
                       "minMaxes", "shapeTagData", "shapeContents", "convexCounts"):
                 a = sl[k]
@@ -301,11 +275,6 @@ def cmd_check(args):
             for k in ("shapeIndices", "shapeNames", "shapeContents"):
                 want(sl[k].size == n, "%s has %d entries, shapes has %d" % (k, sl[k].size, n))
 
-            # The per-shape STATISTICS arrays are not always one-per-shape in stock: cp_zmb
-            # ships 216 shapes with 215 vertCounts/triCounts/convexCounts and 430 minMaxes,
-            # and cp_rave 132 with 131 and 262. The other four maps are exact. Why the last
-            # shape is omitted is not understood, so accept n or n-1 rather than either
-            # false-failing shipped data or dropping the check entirely.
             for k in ("vertCounts", "triCounts", "convexCounts"):
                 want(sl[k].size in (n, max(0, n - 1)),
                      "%s has %d entries, shapes has %d (stock uses n or n-1)"
@@ -340,13 +309,6 @@ def cmd_check(args):
                          "section %d leafIndex=%d but its top-tree leaf is node %d"
                          % (si, s.leaf_index, leaves[si]))
 
-                # Shared-vertex paging. The runtime resolves a shared vertex as
-                #   sharedVertices[0x10000 * page + sharedVerticesIndex[first + v]]
-                # so every index a section can produce has to land inside the pool. A
-                # writer that leaves page at 0 while emitting more than 65,536 vertices
-                # wraps its uint16 indices back to the start of the pool -- the geometry
-                # is still "valid" and every other check here passes, so nothing caught
-                # it. These three rules do.
                 first = s.shared_vertices_raw >> 8
                 n_idx = s.num_shared_indices
                 npv = s.num_packed_vertices
@@ -358,20 +320,13 @@ def cmd_check(args):
                          "section %d reads sharedVerticesIndex[%d..%d], array holds %d"
                          % (si, first, first + n_idx - 1, mt.shared_vertices_index.size))
 
-                    # Only follow slots a real triangle actually uses as a vertex. A
-                    # sharedVerticesIndex slot can also hold a custom-primitive shape-type
-                    # descriptor, which is not an index into anything: mp_frontend's
-                    # svi[0] is 2050, and reading it as a vertex index points far past a
-                    # 307-entry pool.
                     po, pc = unpack_section_field(s.primitives_raw)
-                    # Not `worst`: that name is the command's exit status, and reusing it
-                    # here made `check` exit with a vertex index (266) on a clean run.
                     worst_index = None
                     for pi in range(pc):
                         off = mt.primitives.data + (po + pi) * 4
                         prim = d[off:off + 4]
                         if prim == DEAD or (prim[1] == prim[2] == prim[3]):
-                            continue  # padding, or a custom primitive
+                            continue
                         for v in prim:
                             if v >= npv:
                                 slot = first + v - npv
@@ -390,12 +345,6 @@ def cmd_check(args):
                  "section primitive counts sum to %d, array holds %d"
                  % (tot_p, mt.primitives.size))
 
-            # primitiveDataRuns is {u16 value; u8 index; u8 count} and `value` indexes
-            # shapeTagData -- the per-surface collisionFilterInfo / materialCRC / userData
-            # palette. Nothing else here reads a byte of that palette, so an out-of-range
-            # run (or a palette built with the wrong number of entries) used to sail
-            # through. Physics_AddShapeList resolves the tag by index at load, so a run
-            # pointing past the palette reads whatever follows it.
             if sl is not None and mt.primitive_data_runs.size:
                 tag_n = sl["shapeTagData"].size
                 bad_runs = 0
@@ -407,8 +356,6 @@ def cmd_check(args):
                      "%d of %d primitiveDataRuns index past the %d-entry shapeTagData "
                      "palette" % (bad_runs, mt.primitive_data_runs.size, tag_n))
 
-            # A pool past one page is unreachable unless some section says so. Stock pages
-            # every world blob it ships: mp_afghan uses 3, mp_paris and cp_zmb 5.
             if mt.shared_vertices.size > 0x10000:
                 pages = set()
                 for si in range(S):
@@ -418,19 +365,6 @@ def cmd_check(args):
                      "only the first 65536 are reachable -- indices past that have wrapped"
                      % mt.shared_vertices.size)
 
-            # Every per-section BVH leaf box must contain its primitive. The tolerance is
-            # 1% of the section extent with a 0.05-unit floor: the encoder built these
-            # boxes from the original float geometry, while the vertices were separately
-            # quantised, so a sub-percent disagreement is expected and is not an error.
-            # The floor matters for very small sections, where 0.01 units is already
-            # several percent. Across every leaf of every stock world blob the largest
-            # absolute overshoot is 0.03 units. See the Aabb4BytesCodec note in
-            # hkcompressedmesh.py.
-            # A section leaf's data byte is (primitiveIndex << 1). Stock always uses each
-            # primitive exactly once: in all 5,302 multi-primitive sections of the three
-            # shipped world blobs the leaf indices are a permutation of 0..pc-1, never
-            # duplicated. A writer that emits a bare 0 for every leaf produces a tree that
-            # bounds the right boxes but names the wrong geometry, which this catches.
             badperm = 0
             for si in range(S):
                 s = read_section(d, mt.sections.data, si, fix)
@@ -445,12 +379,6 @@ def cmd_check(args):
                  "%d sections whose BVH leaf primitive indices are not a permutation of "
                  "0..primitiveCount-1" % badperm)
 
-            # Structural invariants that hold exactly in stock and that a writer can
-            # plausibly break. Section domains never escape the tree domain (0 violations
-            # across all three shipped world blobs), and each section's domain bounds its
-            # own vertices -- the latter only to within quantisation noise, since the
-            # encoder computed it from float geometry before the vertices were quantised
-            # (worst observed in stock: 0.0022 units).
             escaped = unbounded = 0
             tmn, tmx = mt.domain[0:3], mt.domain[4:7]
             for si in range(S):
@@ -475,8 +403,6 @@ def cmd_check(args):
             want(unbounded == 0,
                  "%d section domains do not bound their own vertices" % unbounded)
 
-            # Data runs are RLE over the section's primitives: they start at index 0, tile
-            # contiguously, and cover exactly primitiveCount. Exact in all stock sections.
             badruns = 0
             for si in range(S):
                 s = read_section(d, mt.sections.data, si, fix)
@@ -495,12 +421,6 @@ def cmd_check(args):
             want(badruns == 0,
                  "%d sections whose data runs do not tile 0..primitiveCount" % badruns)
 
-            # A primitive with indices[1] == indices[2] == indices[3] is a custom
-            # primitive, and the runtime indexes a THREE-entry shape-type table with the
-            # low nibble of sharedVerticesIndex[indices[0]]. Stock only ever uses type 2
-            # (convex; see the custom-primitive checks below). Anything else means a degenerate triangle was emitted as [a,b,c,c]
-            # with b == c and is now being read as a custom primitive with an
-            # out-of-bounds type.
             badcustom = collections.Counter()
             for si in range(S):
                 s = read_section(d, mt.sections.data, si, fix)
@@ -542,16 +462,6 @@ def cmd_check(args):
             want(leaks == 0,
                  "%d per-section BVH leaf boxes do not contain their primitive" % leaks)
 
-            # Convex custom primitives. Type 2 -- the only type stock uses -- is a convex whose
-            # vertices are the run sharedVertices[page*65536 + svi[r+1] .. + (svi[r] >> 8)],
-            # and it is how stock stores every brush. IW7's player movement cast collides
-            # with these and never with the mesh's triangles, so they are held to everything
-            # stock does: type 2, layer 0, at least 4 vertices, a run inside the pool AND
-            # inside the section's page, distinct points, and a per-section leaf box that
-            # contains the run -- at the same 1% / 0.05-unit tolerance as the primitive
-            # containment check above. That last rule is NOT loosened for stock: mp_afghan
-            # has 1 custom of 7,790 whose leaf box misses its run by more than that, and this
-            # check reports it as a failure rather than hide it.
             cust = collections.Counter()
             custom_count = mesh_triangles = 0
             leaf_misses = []
@@ -610,16 +520,11 @@ def cmd_check(args):
                      "outside against a %.4f tolerance)"
                      % (len(leaf_misses), custom_count, si, pi, over, e))
 
-            # Key bookkeeping: a triangle owns one key, a quad two, a custom exactly one.
             want(mt.num_primitive_keys == mesh_triangles + custom_count,
                  "numPrimitiveKeys is %d, expected %d mesh triangles + %d customs = %d"
                  % (mt.num_primitive_keys, mesh_triangles, custom_count,
                     mesh_triangles + custom_count))
 
-            # The shape list's per-shape statistics for THIS mesh: triCounts is the mesh
-            # triangle count (customs excluded) and convexCounts the custom count. Stock
-            # mp_afghan: 188,886 triangles beside 7,790 customs. vertCounts is unresolved
-            # (pool size on mp_frontend, not on mp_afghan) and deliberately not checked.
             if sl is not None:
                 for i in range(sl["shapes"].size):
                     if fix.get(sl["shapes"].data + 8 * i) != so:
@@ -645,13 +550,6 @@ def cmd_check(args):
                 want(len(keys) == real,
                      "simdTree indexes %d primitives, mesh has %d real ones" % (len(keys), real))
                 want(len(set(keys)) == len(keys), "simdTree references a primitive twice")
-                # A primitive key is (section << 8) | (primitiveIndex << 1). The low bit is
-                # reserved, exactly as in the BVH leaf byte -- so the primitive index is
-                # SHIFTED, and reading the low byte directly names the wrong primitive for
-                # half of all keys. Verified on stock: under this decode 100% of keys name a
-                # real (section, primitive) pair and the keys are a bijection onto the
-                # primitive set (mp_afghan 105,752 keys / 105,752 primitives); every other
-                # candidate decode fails.
                 pcs = []
                 for si in range(S):
                     sec = read_section(d, mt.sections.data, si, fix)
@@ -678,8 +576,6 @@ def cmd_check(args):
         worst = max(worst, 1 if fails else 0)
     return worst
 
-
-# ----------------------------------------------------------------------------- diff
 
 def summarise(path):
     pf, d, fix = load(path)
@@ -728,8 +624,6 @@ def cmd_diff(args):
         print("%-30s %-24s %-20s%s" % (k, va, vb, mark))
 
 
-# ----------------------------------------------------------------------------- geom
-
 def cmd_geom(args):
     pf, d, fix = load(args.path)
     total_v = total_t = 0
@@ -739,11 +633,6 @@ def cmd_geom(args):
         try:
             dm = decode_mesh(d, mt, shape.convex_radius, fix)
         except NotImplementedError as exc:
-            # This used to be swallowed as a "known decoder limitation" for sections with
-            # numPackedVertices == 0. That gap is closed -- npv0 is in fact the ordinary
-            # stock encoding (9,117 of the 9,708 sections in the shipped world blobs) and
-            # all 601 mesh objects in the dump decode -- so reaching here now means a
-            # genuinely malformed or unsupported blob, and it must not report success.
             print("  ERROR: geometry does not decode: %s" % exc)
             return 1
         bmin, bmax = dm.bounds()
@@ -779,8 +668,6 @@ def cmd_geom(args):
             fh.write("\n".join(obj) + "\n")
         print("wrote %s (%d verts, %d tris)" % (args.obj, total_v, total_t))
 
-
-# ----------------------------------------------------------------------------- aabb
 
 def cmd_aabb(args):
     """Decode the top-level BVH with the quadratic nibble codec and report how tight the
@@ -836,15 +723,13 @@ def cmd_aabb(args):
                       " than the surfaces")
 
 
-# --------------------------------------------------------------------------- survey
-
 def cmd_survey(args):
     print("%-46s %-10s %-9s %-9s %-8s %s"
           % ("file", "root", "sections", "prims", "simd", "domain"))
     for path in expand(args.paths):
         try:
             pf, d, fix = load(path)
-        except Exception as exc:                      # noqa: BLE001
+        except Exception as exc:
             print("%-46s <unreadable: %s>" % (os.path.basename(path), exc))
             continue
         row = None
@@ -858,8 +743,6 @@ def cmd_survey(args):
         print("%-46s %-10s %s" % (os.path.basename(path),
                                   pf.root_class_name()[:10], row or "(no mesh)"))
 
-
-# ----------------------------------------------------------------------------- main
 
 class NoFilesMatched(Exception):
     """Raised when a pattern matched nothing.

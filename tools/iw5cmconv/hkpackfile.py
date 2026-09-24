@@ -25,7 +25,7 @@ from typing import List, Tuple
 MAGIC0 = 0x57E0E057
 MAGIC1 = 0x10C0C010
 HEADER_SIZE = 64
-SECTION_HEADER_SIZE = 64          # char[19] tag + char nullByte + 7*int32 + int32 pad[4]
+SECTION_HEADER_SIZE = 64
 CONTENTS_VERSION_IW7 = b"hk_2014.2.5-r1"
 
 
@@ -75,8 +75,6 @@ class Packfile:
     predicate_array_size_plus_padding: int = 0
     sections: List[Section] = field(default_factory=list)
 
-    # ------------------------------------------------------------------ read
-
     @classmethod
     def parse(cls, blob: bytes) -> "Packfile":
         m0, m1, user_tag, file_version = struct.unpack_from("<IIiI", blob, 0)
@@ -114,8 +112,6 @@ class Packfile:
         with open(path, "rb") as fh:
             return cls.parse(fh.read())
 
-    # ------------------------------------------------------- class name table
-
     def class_names(self) -> List[Tuple[int, int, str]]:
         """[(name_offset, signature, name)] parsed out of __classnames__.
 
@@ -131,7 +127,7 @@ class Packfile:
             if blob[p:p + 1] == b"\xff":
                 break
             sig = struct.unpack_from("<I", blob, p)[0]
-            name_at = p + 5                       # skip the 0x09 separator
+            name_at = p + 5
             end = blob.find(b"\0", name_at)
             if end < 0:
                 break
@@ -146,8 +142,6 @@ class Packfile:
     def root_class_name(self) -> str:
         return self._name_at(self.contents_class_name_section_index,
                              self.contents_class_name_section_offset)
-
-    # ----------------------------------------------------------- fixup tables
 
     def local_fixups(self, sec: Section) -> List[Tuple[int, int]]:
         """[(src_offset, dst_offset)] -- intra-section pointer patches."""
@@ -184,8 +178,6 @@ class Packfile:
                 out.append((si, obj_off, self._name_at(cn_si, cn_off)))
         return out
 
-    # ----------------------------------------------------------------- write
-
     def build(self) -> bytes:
         """Re-serialize. Section payloads are written verbatim at their recorded
         absolute offsets, so parse() -> build() is byte-exact."""
@@ -197,8 +189,6 @@ class Packfile:
                            self.contents_section_offset,
                            self.contents_class_name_section_index,
                            self.contents_class_name_section_offset)
-        # hkPackfileHeader() does memSet(this, -1, sizeof(*this)) before writing
-        # the version string, so the bytes after the NUL stay 0xFF -- not zero.
         cv = self.contents_version[:15]
         out += cv + b"\0" + b"\xff" * (16 - len(cv) - 1)
         out += struct.pack("<iHH", self.flags, self.max_predicate,
@@ -208,12 +198,12 @@ class Packfile:
         for sec in self.sections:
             tag = sec.tag.encode("ascii")[:19]
             out += tag + b"\0" * (19 - len(tag))
-            out += b"\xff"                                   # m_nullByte
+            out += b"\xff"
             out += struct.pack("<7i", sec.absolute_data_start,
                                sec.local_fixups_offset, sec.global_fixups_offset,
                                sec.virtual_fixups_offset, sec.exports_offset,
                                sec.imports_offset, sec.end_offset)
-            out += b"\xff" * 16                              # int32 m_pad[4]
+            out += b"\xff" * 16
 
         for sec in self.sections:
             if len(out) < sec.absolute_data_start:

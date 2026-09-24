@@ -14,8 +14,6 @@ import struct
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
-# ---------------------------------------------------------------- primitives
-
 def u8(d, o):   return d[o]
 def u16(d, o):  return struct.unpack_from("<H", d, o)[0]
 def u32(d, o):  return struct.unpack_from("<I", d, o)[0]
@@ -32,8 +30,8 @@ class HkArray:
     In serialized data m_data is a file offset (patched by a local fixup) and
     m_capacityAndFlags carries 0x80000000 (DONT_DEALLOCATE).
     """
-    offset: int          # offset of the hkArray struct itself
-    data: int            # resolved target offset of m_data, or 0
+    offset: int
+    data: int
     size: int
     capacity_and_flags: int
 
@@ -56,8 +54,6 @@ def read_hkarray(d, o, fixups) -> HkArray:
     return HkArray(o, fixups.get(o, 0), size, cap)
 
 
-# ------------------------------------------------------------------ structs
-
 @dataclass
 class Section:
     """hkcdStaticMeshTreeBaseSection, 96 bytes, reflection version 3.
@@ -68,8 +64,8 @@ class Section:
     """
     index: int
     nodes: HkArray
-    domain: Tuple[float, ...]        # min xyz w, max xyz w
-    codec_parms: Tuple[float, ...]   # float[6] -- vertex dequantisation
+    domain: Tuple[float, ...]
+    codec_parms: Tuple[float, ...]
     first_packed_vertex: int
     shared_vertices_raw: int
     primitives_raw: int
@@ -90,17 +86,17 @@ class MeshTree:
     Inherits hkcdStaticMeshTreeBase (112), which inherits
     hkcdStaticTreeTree<hkcdStaticTreeDynamicStorage5> (48).
     """
-    nodes: HkArray               # +0    hkcdStaticTreeCodec3Axis5, 5 bytes each
-    domain: Tuple[float, ...]    # +16   hkAabb
-    num_primitive_keys: int      # +48
-    bits_per_key: int            # +52
-    max_key_value: int           # +56
-    sections: HkArray            # +64
-    primitives: HkArray          # +80   hkcdStaticMeshTreeBasePrimitive, 4 bytes
-    shared_vertices_index: HkArray  # +96 uint16
-    packed_vertices: HkArray     # +112  uint32
-    shared_vertices: HkArray     # +128  uint64
-    primitive_data_runs: HkArray  # +144 4 bytes each
+    nodes: HkArray
+    domain: Tuple[float, ...]
+    num_primitive_keys: int
+    bits_per_key: int
+    max_key_value: int
+    sections: HkArray
+    primitives: HkArray
+    shared_vertices_index: HkArray
+    packed_vertices: HkArray
+    shared_vertices: HkArray
+    primitive_data_runs: HkArray
 
 
 @dataclass
@@ -134,7 +130,7 @@ def read_shape(d, o) -> CompressedMeshShape:
         convex_radius=f32(d, o + 20),
         user_data=u64(d, o + 24),
         shape_tag_codec_info=u32(d, o + 88),
-        data_ptr=o + 96,                 # resolved by caller via global fixup
+        data_ptr=o + 96,
         num_triangles=i32(d, o + 152),
         num_convex_shapes=i32(d, o + 156),
     )
@@ -177,21 +173,11 @@ def read_section(d, base, index, fixups) -> Section:
     )
 
 
-# --------------------------------------------------------------- decoding
-#
-# Everything below was derived from shipped IW7 data and verified against it;
-# see docs/iw7-havok-collision.md section 5a for the derivation.
+COD_UNITS_PER_HAVOK_UNIT = 32.0
 
-COD_UNITS_PER_HAVOK_UNIT = 32.0     # exact; see the conduit/ladder evidence in the docs
-
-# hkcdStaticMeshTree::VertexCodecBase<hkUint64>::setupParameters uses
-#     invBitScales = { 2^-21, 2^-21, 2^-22, 1.0 }
-# recovered from IW8 as the constant __xmm@3f800000348000023500000435000004, i.e. the
-# 64-bit shared vertex is 21/21/22 bits over the *tree* domain (not the section codec).
 SHARED_VERTEX_BITS = (21, 21, 22)
 SHARED_VERTEX_INV_BIT_SCALES = (2.0 ** -21, 2.0 ** -21, 2.0 ** -22)
 
-# IW8: m_sharedVertices = &mesh->m_sharedVertices.m_data[0x10000 * section->m_page]
 SHARED_VERTEX_PAGE_SIZE = 0x10000
 
 
@@ -206,35 +192,6 @@ def decode_shared_vertex(packed: int, domain) -> Tuple[float, float, float]:
                  for i, r in enumerate((rx, ry, rz)))
 
 
-# ------------------------------------------------- per-section BVH (Aabb4BytesCodec)
-#
-# Each section carries an hkcdStaticTree::AabbTree<hkcdCompressedAabbCodecs::Aabb4BytesCodec>
-# in `section.nodes`. A node is 4 bytes: uint8 xyz[3] then uint8 data.
-#
-#     isInternal = data & 1
-#     left       = n + 1
-#     right      = n + (data & 0xFE)
-#     leaf primitive index = data >> 1
-#
-# Each axis byte holds two 4-bit inset codes, and the inset is *quadratic* in the code --
-# not linear -- relative to the parent box along that axis:
-#
-#     childMin[i] = parentMin[i] + (xyz[i] >> 4)^2   * parentExtent[i] / 226
-#     childMax[i] = parentMax[i] - (xyz[i] & 0x0F)^2 * parentExtent[i] / 226
-#
-# The root's parent box is the stored section domain. The divisor is 226, not 15^2 = 225,
-# so code 15 insets 225/226 of the extent and never quite collapses the box. 225 passes the
-# 1%-tolerance containment check below but not a tight one: with 0.1% tolerance, 99.3% of
-# mp_afghan's 25,822 section leaves contain their primitive at 226 against 36% at 225, and
-# the top-level tree (same codec) contains 1400/1400 section domains at 226 against 4/1400.
-#
-# Verified by leaf containment against decoded geometry: 100.00% on all three stock world
-# blobs (mp_afghan 12521/12521, mp_paris 9961/9961, mp_breakneck 11208/11208). The check
-# needs a tolerance relative to the section extent, because the encoder built these boxes
-# from the original float geometry while the vertices were separately quantised; observed
-# overshoot is p99 ~0.3% of the section extent and never exceeds 0.8%. That tolerance still
-# discriminates sharply -- at the identical 1% bound, v^2/240 scores 74%/55%, v^2/256
-# 54%/34%, v^2/196 0.02%, and a linear code 0%.
 BVH_INSET_DIVISOR = 226.0
 
 
@@ -298,11 +255,10 @@ class DecodedCustom:
     """
     section: int
     primitive: int
-    record_slot: int                  # r, the section-local slot of the descriptor
-    descriptor: int                   # raw word, or -1 if unreadable
-    start: int                        # page-relative run start, or -1 if unreadable
-    run_start: int                    # global index into sharedVertices, or -1
-    # Decoded positions; None when the record or run is unreadable (out of range).
+    record_slot: int
+    descriptor: int
+    start: int
+    run_start: int
     vertices: Optional[List[Tuple[float, float, float]]] = None
 
     @property
@@ -373,9 +329,7 @@ class DecodedMesh:
     primitive_sections: List[int]
     domain: Tuple[float, ...]
     convex_radius: float
-    custom_primitives: List[Tuple[int, int]] = field(default_factory=list)  # (section, type)
-    # Every custom primitive fully decoded, convex vertex run included. Kept apart from
-    # `vertices` / `triangles` so triangle and quad decoding is unchanged.
+    custom_primitives: List[Tuple[int, int]] = field(default_factory=list)
     customs: List[DecodedCustom] = field(default_factory=list)
 
     def bounds(self):
@@ -397,7 +351,7 @@ def decode_mesh(d, mesh_tree: MeshTree, convex_radius: float, fixups) -> Decoded
     tris: List[Tuple[int, int, int]] = []
     quads: List[Tuple[int, int, int, int]] = []
     prim_section: List[int] = []
-    custom: List[Tuple[int, int]] = []       # (section, custom-primitive shape type)
+    custom: List[Tuple[int, int]] = []
     customs: List[DecodedCustom] = []
 
     pv_base = mesh_tree.packed_vertices.data
@@ -447,26 +401,9 @@ def decode_mesh(d, mesh_tree: MeshTree, convex_radius: float, fixups) -> Decoded
             o = prim_base + (prim_off + pi) * SIZEOF_PRIMITIVE
             a, b, c, e = d[o], d[o + 1], d[o + 2], d[o + 3]
 
-            # Havok pads unused primitive slots with 0xDEADDEAD.
             if (a, b, c, e) == (0xDE, 0xAD, 0xDE, 0xAD):
                 continue
 
-            # A primitive with indices[1] == indices[2] == indices[3] is a *custom
-            # primitive*, not a triangle. Its indices[0] does not name a vertex: it
-            # indexes sharedVerticesIndex, and the word found there is a descriptor
-            # whose low nibble selects hknpCompressedMeshShapeInternals::
-            # s_customPrimitiveToShapeType.
-            #
-            # Decoding these as triangles is what produced the long-standing "~7% of
-            # vertices resolve outside their section domain" error: 7,753 of 105,752
-            # primitives in mp_afghan and 18,250 of 140,247 in mp_paris are custom, and
-            # every one of them in stock data is type 2. Type 2 is NOT a NOP, as this
-            # comment used to say: it is a convex -- in stock, a brush -- whose vertices
-            # are the contiguous run
-            #     sharedVertices[page*65536 + svi[r+1] .. + (svi[r] >> 8)]
-            # (see decode_custom). They are geometry, and the only world geometry IW7's
-            # player movement cast collides with. They are decoded into `customs` rather
-            # than into `vertices` / `triangles`, so triangle and quad decoding is unchanged.
             if b == c == e:
                 custom.append((si, custom_shape_type(d, mesh_tree, s, a)))
                 customs.append(decode_custom(d, mesh_tree, s, pi, a))

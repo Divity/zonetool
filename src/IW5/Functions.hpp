@@ -14,7 +14,16 @@ namespace ZoneTool
 
 		static const char* SL_ConvertToString(std::uint16_t index)
 		{
-			return Memory::func<const char* (int)>(0x4E72D0)(index);
+			const char* result = nullptr;
+			const std::uint32_t function = 0x4E72D0;
+			const std::uint32_t value = index;
+			__asm
+			{
+				mov eax, value
+				call function
+				mov result, eax
+			}
+			return result;
 		}
 
 		static short SL_AllocString(const std::string& string)

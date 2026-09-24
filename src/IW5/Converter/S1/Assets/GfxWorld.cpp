@@ -836,7 +836,6 @@ namespace ZoneTool::IW5
 
 			s1_asset->fogTypesAllowed = asset->fogTypesAllowed;
 
-			// s1 does not need umbra data.
 			s1_asset->umbraTomeSize = 0;
 			s1_asset->umbraTomeData = nullptr;
 			s1_asset->umbraTomePtr = nullptr;

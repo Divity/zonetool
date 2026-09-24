@@ -11,10 +11,6 @@ namespace ZoneTool::Umbra
 {
 	namespace
 	{
-		// The Umbra 3 tome header. Versions 0x12 (what the optimizer writes) and
-		// 0x14 (what IW7 ships) share it up to m_numFaces; 0x14 appends the per tile
-		// portal expands, output bounds and the uniform cluster coordinate scale.
-		// Every DataPtr is a byte offset from the start of the tome, 0 = null.
 		struct tome_header
 		{
 			std::uint32_t m_versionMagic;
@@ -68,7 +64,6 @@ namespace ZoneTool::Umbra
 		};
 		static_assert(sizeof(tome_header) == 332);
 
-		// common prefix of the 0x12 (80 byte) and 0x14 (96 byte) ImpTile
 		struct tile_header
 		{
 			float m_treeMin[3];
@@ -78,9 +73,9 @@ namespace ZoneTool::Umbra
 			std::uint32_t m_viewTree_map;
 			std::uint32_t m_viewTree_numSplitValues;
 			std::uint32_t m_viewTree_splitValues;
-			std::int32_t m_sizeAndFlags; // (size << 8) | flags, bit 0 = leaf
+			std::int32_t m_sizeAndFlags;
 			float m_portalExpand;
-			std::int32_t m_numCellsAndClusters; // clusters << 16 | cells
+			std::int32_t m_numCellsAndClusters;
 			std::uint32_t m_cells;
 			std::uint32_t m_portals;
 		};
@@ -214,8 +209,6 @@ namespace ZoneTool::Umbra
 			}
 		}
 
-		// Runs the generator with stdout/stderr captured to `output_path`. Returns
-		// the exit code, or -1 if the process could not be started.
 		int run_generator(const std::string& command_line, const std::string& output_path, std::string& error)
 		{
 			SECURITY_ATTRIBUTES inheritable{};
@@ -261,8 +254,6 @@ namespace ZoneTool::Umbra
 
 	scene_params tome_input::default_params()
 	{
-		// See RESEARCH.md for how these were chosen. All three can be overridden
-		// from the environment for tuning without a rebuild.
 		scene_params params{};
 		params.smallest_occluder = env_float("ZT_UMBRA_SMALLEST_OCCLUDER", 128.0f);
 		params.smallest_hole = env_float("ZT_UMBRA_SMALLEST_HOLE", 16.0f);
@@ -286,14 +277,13 @@ namespace ZoneTool::Umbra
 			model.vertices.push_back((corner & 4) ? maxs[2] : mins[2]);
 		}
 
-		// outward facing (counter clockwise seen from outside)
 		static const std::uint32_t faces[6][4] = {
-			{ 0, 4, 6, 2 }, // -x
-			{ 1, 3, 7, 5 }, // +x
-			{ 0, 1, 5, 4 }, // -y
-			{ 2, 6, 7, 3 }, // +y
-			{ 0, 2, 3, 1 }, // -z
-			{ 4, 5, 7, 6 }, // +z
+			{ 0, 4, 6, 2 },
+			{ 1, 3, 7, 5 },
+			{ 0, 1, 5, 4 },
+			{ 2, 6, 7, 3 },
+			{ 0, 2, 3, 1 },
+			{ 4, 5, 7, 6 },
 		};
 		for (const auto& face : faces)
 		{
@@ -345,7 +335,11 @@ namespace ZoneTool::Umbra
 		}
 		CreateDirectoryA(work_directory.c_str(), nullptr);
 
-		const auto base = work_directory + "\\" + (input.name.empty() ? "tome" : input.name);
+		auto safe_name = input.name.empty() ? std::string("tome") : input.name;
+		std::replace(safe_name.begin(), safe_name.end(), '/', '_');
+		std::replace(safe_name.begin(), safe_name.end(), '\\', '_');
+
+		const auto base = work_directory + "\\" + safe_name;
 		const auto scene_path = base + ".umbrascene";
 		const auto tome_path = base + ".tome";
 		const auto log_path = base + ".umbra.log";
@@ -381,8 +375,6 @@ namespace ZoneTool::Umbra
 			return false;
 		}
 
-		// exit code 7 is "generated, but the runtime verification failed": keep the
-		// tome for inspection, but do not ship it.
 		if (exit_code != 0)
 		{
 			result.error = "umbra-tomegen exited with " + std::to_string(exit_code) + " (see " + output_path + ")";
@@ -451,7 +443,6 @@ namespace ZoneTool::Umbra
 
 		const auto usable = std::min<std::size_t>(size, header.m_size);
 
-		// m_userIDStarts is optional: null means exactly one ID per object
 		if (header.m_numObjects > 0)
 		{
 			if (header.m_userIDStarts && header.m_userIDStarts + (header.m_numObjects + 1u) * 4u <= usable)
@@ -464,8 +455,6 @@ namespace ZoneTool::Umbra
 			}
 		}
 
-		// The tile tree indexes m_tiles by node, so the array has nodeCount entries
-		// and inner nodes hold the LOD tiles (offset 0 = none).
 		const auto node_count = header.m_tileTree_nodeCount_mapWidth >> 5;
 		if (header.m_tiles && header.m_tiles + node_count * 4u <= usable)
 		{
@@ -482,7 +471,7 @@ namespace ZoneTool::Umbra
 				std::memcpy(&tile, data + tile_offset, sizeof(tile));
 				if (!(static_cast<std::uint32_t>(tile.m_sizeAndFlags) & 1))
 				{
-					continue; // not a leaf
+					continue;
 				}
 
 				const auto cell_count = static_cast<std::uint32_t>(tile.m_numCellsAndClusters) & 0xFFFF;

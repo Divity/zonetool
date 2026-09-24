@@ -149,17 +149,8 @@ namespace ZoneTool
 				// clear referenced assets array because we are done dumping
 				referencedAssets.clear();
 
-				// Visions are rewritten once, after every asset is on disk: the source game's file is
-				// only final once the rawfile dumper has written it.
 				::ZoneTool::IW5::IW7Dumper::convert_visions(fastfile);
 				
-				// A dumper may have written an asset out under a different name than the one the
-				// game knows it by - see csv_buffer_line - so the lines are resolved here, once
-				// every asset in the zone has been through its dumper.
-				//
-				// This has to finish before isDumping is cleared: dump_zone is blocked on that flag
-				// from another thread and calls std::exit as soon as it drops, which would kill this
-				// thread mid-write and leave the csv truncated at a buffer boundary.
 				for (const auto& line : zonetool::filesystem::csv_take_lines())
 				{
 					fprintf(csvFile, "%s\n", line.data());
@@ -191,7 +182,11 @@ namespace ZoneTool
 				if (csvFile/* && !is_referenced*/)
 				{
 					auto xassettypes = reinterpret_cast<char**>(0x00726840);
-					zonetool::filesystem::csv_buffer_line(xassettypes[asset->type], GetAssetName(asset));
+					const auto csv_type = zonetool::csv_type_for_target(xassettypes[asset->type]);
+					if (!csv_type.empty())
+					{
+						zonetool::filesystem::csv_buffer_line(csv_type, GetAssetName(asset));
+					}
 				}
 
 				// check if the asset is a reference asset

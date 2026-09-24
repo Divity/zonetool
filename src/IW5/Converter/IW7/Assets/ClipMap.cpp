@@ -22,78 +22,30 @@ namespace ZoneTool::IW5
 	{
 		namespace
 		{
-			// The dummy PhysicsAsset IW7 attaches to script brush models. It supplies the
-			// body/motion properties; physicsShapeOverrideIdx replaces the shape it carries
-			// with one from MapEnts::havokEntsShapeData. Dumped stock IW7 maps ship it under
-			// physicsasset/, so a converted zone can reference it by name -- but the zone has
-			// to actually contain it, or the brush model silently gets no body.
 			constexpr auto BRUSHMODEL_PHYSICS_ASSET = "scriptbrushmodeldummydefault";
 
-			// The entity-string key stock IW7 pairs with a dummy asset name on every
-			// script_brushmodel and every "?N" trigger entity: a static canonical string id
-			// (0xCAF9), which has no text form in the ship exe. See fix_entity_model_references.
 			constexpr auto PHYSICS_ASSET_KEY = "51961";
 
-			// The trigger equivalent. Stock gives every trigger a Havok compound as well, for
-			// physics bodies overlapping the volume; the script-facing trigger path does not
-			// need it and runs off the slab hulls alone (docs/iw7-triggers.md).
 			constexpr auto TRIGGER_PHYSICS_ASSET = "triggermodeldummydefault";
 
-			// The engine's "all valid contents" mask -- the union of every collisionFilterInfo
-			// bit across all shipped blobs. Stock stores it in shapeContents for triggers,
-			// and in the trigger tag's collisionFilterInfo too (mp_fallen 97 of 103 trigger
-			// instances, afghan/paris/breakneck/cp_zmb likewise).
 			constexpr auto ENTS_TRIGGER_CONTENTS = 0xC7FFBFFFu;
 
-			// ShapeTagData::userData bit 48: this surface came from a brush. IW7's player cast
-			// sweeps its separate non-brush shape against anything without it.
 			constexpr auto ENTS_BRUSH_BASIS = 1ull << 48;
 
-			// The low 32 bits of the trigger tag's userData. Every stock map puts the same
-			// value on its trigger tag (0x0001000000040080 in all five checked).
 			constexpr auto ENTS_TRIGGER_SURF_FLAGS = 0x40080ull;
 
-			// Havok bodies on triggers are ON by default, because in MP the touch test needs
-			// one. G_TouchTriggers (0x140424CF0) collects candidates with the classic sector
-			// walk (SV_AreaEntities, 0x140B7B7C0), so a trigger with no body IS found -- but
-			// the per-candidate test in 0x140424DE0 is, for GAME_MODE_MP, an overlap query
-			// against the trigger entity's Havok body (0x14055A0B0: body id from
-			// 0x140549870, -1 when no body -> returns 0). The body only exists when
-			// TriggerModel::physicsAsset and physicsShapeOverrideIdx are set
-			// (0x1404168F0 -> 0x140414810). So without these shapes trigger_hurt,
-			// trigger_multiple and friends never fire in MP. The body's filter is
-			// overwritten with 0x40440008 by InitTrigger (0x140B65630), which shares no bit
-			// with the player mask, so it does not make the volume solid.
-			// ZT_HAVOK_TRIGGER_SHAPES=0 restores the old null-asset triggers for bisecting.
 			bool trigger_shapes_enabled()
 			{
 				const auto* env = std::getenv("ZT_HAVOK_TRIGGER_SHAPES");
 				return !(env && env[0] == '0');
 			}
 
-			// Brush-model Havok shapes are ON by default -- without them "model" "*N"
-			// entities get no physics body at all. Set ZT_HAVOK_ENTS_SHAPES=0 to emit a null
-			// havokEntsShapeData instead, which is what shipped before this list existed.
-			//
-			// This exists purely to bisect. WorldCollision_AddMapEnts skips a zero-sized blob
-			// entirely, so turning it off restores exactly the previous runtime behaviour and
-			// isolates whether a crash comes from this blob or from somewhere else.
 			bool ents_shapes_enabled()
 			{
 				const auto* env = std::getenv("ZT_HAVOK_ENTS_SHAPES");
 				return !(env && env[0] == '0');
 			}
 
-			// IW7 keeps trigger volumes exactly where IW5 does: MapTriggers, a flat array of
-			// TriggerModels indexed straight from the entity string by "model" "?N", each
-			// owning a run of TriggerHulls (an entity-local AABB plus optional slab planes).
-			// It is not Havok data -- the runtime trigger path (SV_SetTriggerModel ->
-			// CM_TriggerModelBounds / CM_ContentsOfTriggerModel -> SV_LinkEntity) reads these
-			// arrays and never touches TriggerModel::physicsAsset. See docs/iw7-triggers.md.
-			//
-			// TriggerHull and TriggerSlab are byte-identical between the two games, so they
-			// pass through by pointer (REINTERPRET_CAST_SAFE static_asserts that). Only
-			// TriggerModel grew -- 8 bytes to 32 -- so it needs a real copy.
 			void convert_map_triggers(const MapTriggers& src, IW7::MapTriggers& dst,
 				allocator& allocator)
 			{
@@ -101,25 +53,14 @@ namespace ZoneTool::IW5
 				dst.models = allocator.allocate<IW7::TriggerModel>(src.count);
 				for (unsigned int i = 0; i < src.count; i++)
 				{
-					// contents needs no remapping: IW5 and IW7 agree bit for bit here
-					// (every shipped map of either game uses 0x28000001 / 0x28000000 /
-					// 0x28004000 and nothing else).
 					dst.models[i].contents = src.models[i].contents;
 					dst.models[i].hullCount = src.models[i].hullCount;
 					dst.models[i].firstHull = src.models[i].firstHull;
 
-					// Windings are an IW7 addition that no shipped IW7 map uses -- all five
-					// stock maps checked have windingCount == 0 -- and IW5 has no source for
-					// them, so they stay empty.
 					dst.models[i].windingCount = 0;
 					dst.models[i].firstWinding = 0;
 					dst.models[i].flags = 0;
 
-					// Both of these are the Havok side of a trigger. The spawn path
-					// (SV_SetTriggerModel -> CM_TriggerModelBounds / CM_ContentsOfTriggerModel)
-					// reads neither, but the MP touch test does need the body they produce --
-					// see trigger_shapes_enabled(). generate_mapents fills them in once the
-					// ents shape list exists; 0xFFFF is IW7's "no shape override".
 					dst.models[i].physicsAsset = nullptr;
 					dst.models[i].physicsShapeOverrideIdx = 0xFFFF;
 				}
@@ -135,10 +76,6 @@ namespace ZoneTool::IW5
 				dst.windingPoints = nullptr;
 			}
 
-			// Entities reach a trigger volume through "model" "?N", N being a zero-based index
-			// into trigger.models -- same convention in both games (checked against 18 stock
-			// IW5 maps and 7 stock IW7 ones). A reference past the end of the array is a
-			// silent out-of-bounds read at map load, so count them rather than trusting it.
 			void audit_trigger_references(const char* entity_string, const int num_chars,
 				const unsigned int model_count)
 			{
@@ -163,8 +100,6 @@ namespace ZoneTool::IW5
 						end++;
 					}
 
-					// "?" followed by anything but digits and a closing quote is not a
-					// brushmodel reference.
 					if (end == digits || end >= ents.size() || ents[end] != '"')
 					{
 						continue;
@@ -203,11 +138,6 @@ namespace ZoneTool::IW5
 				return true;
 			}
 
-			// IW5 map sources use "*N" for both brush models and trigger volumes. IW7
-			// keeps brush models at "*N", but script triggers must use "?N" to index
-			// MapTriggers. Only make that substitution when the source cmodel is an exact
-			// geometric match for exactly one TriggerModel; this prevents an incidental
-			// matching index from turning an ordinary brush model into a trigger.
 			int trigger_for_cmodel(const clipMap_t* clipmap, const unsigned int cmodel)
 			{
 				if (!clipmap || cmodel >= clipmap->numSubModels)
@@ -265,7 +195,6 @@ namespace ZoneTool::IW5
 					const auto close = source.find('}', open + 1);
 					if (close == std::string::npos)
 					{
-						// Do not attempt to repair malformed entity text here.
 						result.append(source, cursor, std::string::npos);
 						break;
 					}
@@ -297,10 +226,6 @@ namespace ZoneTool::IW5
 							}
 						}
 
-						// Stock pairs every "?N" entity with the trigger dummy the same way it
-						// pairs brush models (mp_fallen 83 of 83, mp_afghan 58 of 58; a few use
-						// TriggerModelStaticDummyDefault). Same rules as below: the body does not
-						// depend on it, and the key must be the number.
 						if (is_trigger_model && trigger_shapes_enabled() &&
 							entity.find(std::string("\n") + PHYSICS_ASSET_KEY + " ") ==
 							std::string::npos)
@@ -313,16 +238,6 @@ namespace ZoneTool::IW5
 							entity.find(std::string("\n") + PHYSICS_ASSET_KEY + " ") ==
 							std::string::npos)
 						{
-							// Stock IW7 puts this pair on every script_brushmodel (mp_fallen,
-							// mp_afghan: `51961 "scriptbrushmodeldummydefault"`). The body itself
-							// does not depend on it -- 0x1404168F0 / 0x140146DA0 take the asset
-							// and shape override from cmodel_t -- but it is what the stock game
-							// sees, so emit it verbatim. The key has to be the number: IW7's
-							// G_ParseSpawnVars2 (0x140B1E790) keeps a numeric key as-is and hashes
-							// a text key through SL_GetCanonicalString into the dynamic range
-							// (>= 81868), which can never equal a static id like 51961; and
-							// iw7-mod's map_ents parser drops any text key its token table does
-							// not know, which includes this one (0xCAF9 is unnamed there).
 							entity.insert(entity.size() - 1, std::string(PHYSICS_ASSET_KEY)
 								+ " \"" + BRUSHMODEL_PHYSICS_ASSET + "\"\n");
 							wired_brushmodels++;
@@ -357,8 +272,6 @@ namespace ZoneTool::IW5
 
 			auto* new_def = allocator.allocate<IW7::ScriptableDef>();
 			new_def->name = allocator.duplicate_string(generate_name(dynent));
-			// Health-state scriptables carry HAS_HEALTH in the root flags.  The
-			// stock mp_fallen watermelon is 0x81 (0x80 | 0x1), not just 0x80.
 			new_def->flags = IW7::SCRIPTABLE_DEFFLAG_HAS_HEALTH | 0x80;
 			new_def->type = 0;
 			new_def->nextScriptableDef = nullptr;
@@ -366,8 +279,6 @@ namespace ZoneTool::IW5
 			new_def->parts = allocator.allocate<IW7::ScriptablePartDef>(1);
 			new_def->maxNumDynEntsRequired = 0;
 			new_def->partCount = 1;
-			// This is a client-instanced map prop; stock watermelon uses zero
-			// server-instanced parts even though its first state is Health.
 			new_def->serverInstancedPartCount = 0;
 			new_def->serverControlledPartCount = 0;
 			new_def->maxNumDynEntPartsBase = 1;
@@ -391,19 +302,12 @@ namespace ZoneTool::IW5
 
 			auto* part = new_def->parts;
 			part->name = "";
-			// Stock map scriptable parts use 0x180 for an active part.  The
-			// 0x100 bit is present even on the simple one-part definitions that
-			// back ordinary map props; omitting it leaves the part inactive.
 			part->flags = 0x180;
 			part->flatId = 0;
 			part->serverInstanceFlatId = 0;
 			part->serverControlledFlatId = 0;
 			part->eventStreamBufferOffsetServer = 0;
 			part->eventStreamBufferOffsetClient = 0;
-			// The root reserves the four-byte health stream, but this one-part
-			// definition does not assign a per-part stream range.  Stock watermelon
-			// has a zero part eventStreamSize; using four here shifts the runtime
-			// event buffer layout.
 			part->eventStreamSize = 0;
 			part->numStates = 2;
 			part->states = allocator.allocate<IW7::ScriptableStateDef>(2);
@@ -416,16 +320,12 @@ namespace ZoneTool::IW5
 			healthy_state->base.events = allocator.allocate<IW7::ScriptableEventDef>(1);
 			healthy_state->type = IW7::Scriptable_StateType_Health;
 
-			// Stock compiled health states point the specialized base at the state
-			// base itself.  Keep that identity instead of allocating a duplicate.
 			healthy_state->data.health.base = &healthy_state->base;
 
 			healthy_state->data.health.health = std::max(dynent->health, 1);
 			healthy_state->data.health.minimumDamage = 0;
 			healthy_state->data.health.damagePropagationFromParent = 1.0f;
 			healthy_state->data.health.damagePropagationFromChild = 1.0f;
-			// The stock map definition leaves the optional script identifier null;
-			// a zero scrScript_id means no health callback is registered.
 			healthy_state->data.health.script_id = nullptr;
 			healthy_state->data.health.scrScript_id = 0;
 
@@ -445,9 +345,6 @@ namespace ZoneTool::IW5
 
 			dead_state->base.name = allocator.duplicate_string("dead");
 			dead_state->base.flags = 0;
-			// stock p7_food_fruit_watermelon's dead state starts with a Model event
-			// whose model is null; that is what removes the healthy model.  Without
-			// it the prop stays visible after the destroy fx plays.
 			dead_state->base.numEvents = dynent->destroyFx ? 2 : 1;
 			dead_state->base.events = allocator.allocate<IW7::ScriptableEventDef>(dead_state->base.numEvents);
 			dead_state->type = IW7::Scriptable_StateType_Simple;
@@ -463,7 +360,6 @@ namespace ZoneTool::IW5
 			hide_event->type = IW7::Scriptable_EventType_Model;
 			hide_event->data.model.base = &hide_event->base;
 			hide_event->data.model.model = nullptr;
-			// byte pattern copied from the stock dead-state event (01 00 00 00 00 00)
 			hide_event->data.model.hudOutlineColor = 1;
 			hide_event->data.model.hudOutlineActive = false;
 			hide_event->data.model.hudOutlineFill = false;
@@ -478,19 +374,6 @@ namespace ZoneTool::IW5
 				destroy_event->type = IW7::Scriptable_EventType_PFX;
 				destroy_event->data.particleFX.base = &destroy_event->base;
 				destroy_event->data.particleFX.stateful = false;
-				// IW7 scriptable PFX events are serialized as ParticleSystemDef/VFX
-				// references.  The IW5 source field is an FxEffectDef, but the IW7
-				// dumper/converter emits that asset as a ParticleSystemDef.  Marking
-				// this as FX_COMBINED_FX makes the game interpret the VFX pointer as
-				// an FxEffectDef and crash while walking its elemDefs (0x140A1BDF4).
-				// FxEffectDef and ParticleSystemDef are different IW7 asset
-				// layouts.  Reinterpreting the IW5 pointer makes the particle
-				// renderer read FxElemDef data as ParticleEmitterDef data, which
-				// is the crash seen in the emitter draw path.  The effect itself is
-				// converted when its own asset is dumped; the scriptable only
-				// serializes the name.  Don't convert it here: on the IW3 path
-				// destroyFx is the IW3 FxEffectDef cast straight to the IW5 type
-				// (IW3/IW4 ClipMap), so everything past the counts is garbage.
 				auto* vfx = allocator.manual_allocate<IW7::ParticleSystemDef>(sizeof(const char*));
 				vfx->name = allocator.duplicate_string(dynent->destroyFx->name);
 				destroy_event->data.particleFX.effectDef.u.vfx = vfx;
@@ -501,11 +384,6 @@ namespace ZoneTool::IW5
 			return new_def;
 		}
 
-		// `world_tags` is the shapeTagData table the map's world blob emitted, and it is
-		// handed straight to the ents shape list as its required prefix. IW7 keeps ONE
-		// shape-tag decoder for the whole map, so the ents list's table is the table the
-		// world mesh's own tags are decoded against -- see the note on
-		// havok::builder::shape_tag. Empty means no world blob was built.
 		IW7::MapEnts* generate_mapents(clipMap_t* clipmap, allocator& allocator,
 			const std::vector<ZoneTool::IW7::havok::builder::shape_tag>& world_tags)
 		{
@@ -530,14 +408,17 @@ namespace ZoneTool::IW5
 			{
 				entity_string.assign(asset->entityString, static_cast<size_t>(asset->numEntityChars));
 			}
-			// An IW3 source reaches this IW5->IW7 converter with linker_mode::iw3, so this
-			// target-specific rewrite must not be gated on the IW5 numeric-token conversion.
 			entity_string = fix_entity_model_references(clipmap, entity_string);
-			new_asset->entityString = const_cast<char*>(allocator.duplicate_string(entity_string));
-			new_asset->numEntityChars = static_cast<int>(entity_string.size());
 
-			// Script triggers (trigger_multiple, trigger_use, trigger_hurt, ...) and the
-			// client-side ones (vision sets, reverb zones) both live here.
+			while (!entity_string.empty() && (entity_string.back() == '\n'
+				|| entity_string.back() == '\r' || entity_string.back() == '\0'))
+			{
+				entity_string.pop_back();
+			}
+
+			new_asset->entityString = const_cast<char*>(allocator.duplicate_string(entity_string));
+			new_asset->numEntityChars = static_cast<int>(entity_string.size()) + 1;
+
 			convert_map_triggers(asset->trigger, new_asset->trigger, allocator);
 			convert_map_triggers(asset->clientTrigger.trigger, new_asset->clientTrigger.trigger,
 				allocator);
@@ -611,36 +492,20 @@ namespace ZoneTool::IW5
 			new_asset->splineList.splineCount = 0;
 			new_asset->splineList.splines = nullptr;
 
-			// The per-entity Havok shape list: one convex compound per IW5 brush model, so
-			// that "model" "*N" entities get a physics body instead of nothing. It has to
-			// exist even when empty -- CM_ContentsOfBrushModel reads shapeContents off this
-			// list for every brush-model entity without checking the list pointer, and the
-			// pointer is only ever set by WorldCollision_AddMapEnts, which skips a zero-sized
-			// blob entirely. See docs/iw7-ents-shapes.md.
 			new_asset->havokEntsShapeDataSize = 0;
 			new_asset->havokEntsShapeData = nullptr;
 
-			// cmodel index -> slot in the shape list, filled in below.
 			std::vector<unsigned short> cmodel_shape_index(clipmap->numSubModels, 0xFFFF);
 			{
 				ZoneTool::IW7::havok::builder::ents_input ents{};
 				ents.world_tags = world_tags;
 				if (world_tags.empty())
 				{
-					// The world blob is built first precisely so this cannot happen. Without
-					// it the ents table is ordered by whatever the brush models need, and
-					// since the runtime decodes EVERY shape against this one table, the world
-					// mesh's tags resolve against the wrong records -- floors and walls pick
-					// up someone else's collision filter and userData, or run off the end of
-					// the table entirely, and the player walks through them while rays and
-					// bullets still hit.
 					ZONETOOL_WARNING("mapents: no world shape tag table for \"%s\" -- the "
 						"world mesh's tags will resolve against the ents table instead of "
 						"its own, giving world surfaces the wrong filters", asset->name);
 				}
 
-				// Collected only when ZT_HAVOK_OBJ_DIR is set; see the note on the dump
-				// helpers in ClipMapCollision.hpp.
 				const auto dump_obj = collision::obj_dump_enabled();
 				std::vector<collision::hull_group> ents_obj;
 
@@ -654,22 +519,8 @@ namespace ZoneTool::IW5
 					}
 
 					ZoneTool::IW7::havok::builder::ents_shape shape{};
-					// A brush model keeps its own mask in both fields -- stock breakneck stores
-					// 0x30200 and 0x30000 on 36 of its shapes, and its tags carry real contents
-					// (0x1, 0x2080, 0x30200) rather than a wildcard. The compile-only bits come
-					// off in the builder: ours used to carry CONTENTS_DETAIL (0x08000001,
-					// 0x08031640), which IW7's collision filter rejects outright.
-					// Same rule as the world mesh, and the same correction: a solid brush model
-					// keeps CONTENTS_SOLID. ZT_HAVOK_SOLID_AS_CLIP=1 enables the experimental clip remap on
-					// both paths at once -- they have to agree or a brush model and the world
-					// shell around it filter differently.
-					// ZT_HAVOK_SOLID_CONTENTS overrides the mask on both paths too, for the same
-					// reason: they have to agree.
 					auto contents = model.contents;
 					const auto* solid_as_clip = std::getenv("ZT_HAVOK_SOLID_AS_CLIP");
-					// Keep the entity shape's contents aligned with the world mesh.  A bare
-					// CONTENTS_SOLID is normal in stock palettes, so the experimental clip
-					// substitution is opt-in only.
 					if ((contents & 0x1) && solid_as_clip && solid_as_clip[0] == '1')
 					{
 						auto mask = 0x00031640u;
@@ -687,12 +538,6 @@ namespace ZoneTool::IW5
 					}
 					shape.contents = contents;
 					shape.entity_contents = static_cast<unsigned int>(contents);
-					// These hulls are brushes, so they carry the brush basis, and the material
-					// and surface flags come from the ClipMaterial their planes carry -- the
-					// same source the world mesh uses. Leaving those at a constant made every
-					// brush model untyped concrete and dropped its LADDER / SLICK /
-					// NOPENETRATE / STAIRS / MANTLEON bits; stock ents blobs carry the full
-					// spread (mp_afghan 12 distinct CRCs over 136 tags, flags set on 135).
 					shape.material_crc = model.material_crc;
 					shape.user_data = ENTS_BRUSH_BASIS | model.surface_flags;
 					shape.name = va("%s:brushmodel %u", asset->name, model.index);
@@ -720,7 +565,6 @@ namespace ZoneTool::IW5
 				}
 				decltype(brush_models){}.swap(brush_models);
 
-				// Triggers, appended after the brush models so the slot indices carry on.
 				std::vector<unsigned short> trigger_shape_index(asset->trigger.count, 0xFFFF);
 				if (trigger_shapes_enabled())
 				{
@@ -739,18 +583,8 @@ namespace ZoneTool::IW5
 						}
 
 						ZoneTool::IW7::havok::builder::ents_shape shape{};
-						// A trigger is the one case stock does use the wildcard for, in BOTH
-						// places: all 78 trigger shapes in mp_dome_dusk and 63 of breakneck's
-						// 106 carry it in shapeContents, and the tag their instances point at
-						// carries it as collisionFilterInfo too. The runtime never reads the
-						// trigger's own contents (0x28000001 etc.) off this list --
-						// CM_ContentsOfTriggerModel takes it from TriggerModel::contents, and
-						// InitTrigger overwrites the body filter with 0x40440008.
 						shape.contents = static_cast<int>(ENTS_TRIGGER_CONTENTS);
 						shape.entity_contents = ENTS_TRIGGER_CONTENTS;
-						// A trigger is a volume, not a surface, so it keeps the default material.
-						// The userData is the one constant every stock map uses on its trigger
-						// tag: brush basis plus 0x40080.
 						shape.user_data = ENTS_BRUSH_BASIS | ENTS_TRIGGER_SURF_FLAGS;
 						shape.name = va("%s:trigger %u", asset->name, t);
 
@@ -790,8 +624,6 @@ namespace ZoneTool::IW5
 
 				if (!blob.empty())
 				{
-					// The one number that matters is `prefix`: it has to equal the world
-					// table's size, or the world mesh is decoding against the wrong records.
 					ZONETOOL_INFO("mapents: havok tag table -- world %zu entries, ents %zu "
 						"(%zu reused from the world table, %zu appended)",
 						tag_merge.prefix, tag_merge.total, tag_merge.reused,
@@ -821,8 +653,6 @@ namespace ZoneTool::IW5
 				}
 				else
 				{
-					// Without the list the indices below would point into nothing, and
-					// CM_ContentsOfBrushModel would read through a null pointer.
 					ZONETOOL_WARNING("mapents: no havok ents shape list generated for \"%s\" -- "
 						"brush model entities may fault on link", asset->name);
 					std::fill(cmodel_shape_index.begin(), cmodel_shape_index.end(),
@@ -832,8 +662,6 @@ namespace ZoneTool::IW5
 				}
 				decltype(blob){}.swap(blob);
 
-				// Point the trigger models at their shapes. Both fields are needed or the
-				// runtime builds no body -- see docs/iw7-ents-shapes.md section 3.
 				auto shaped_triggers = 0;
 				IW7::PhysicsAsset* trigger_physics = nullptr;
 				for (unsigned int t = 0; t < new_asset->trigger.count; t++)
@@ -892,12 +720,6 @@ namespace ZoneTool::IW5
 				memcpy(&info->planes[i], &clipmap->info.planes[i], sizeof(cplane_s));
 			}
 
-			// A brush model only gets a Havok body if BOTH physicsAsset and
-			// physicsShapeOverrideIdx are set -- sub_140146DA0 reads the override only when
-			// the asset is non-null, and skips body creation entirely when it is null. Stock
-			// maps point this at a dummy PhysicsAsset named in the entity string (key 51961);
-			// IW5 entities have no such key, so name the same default IW7 uses and let the
-			// zone supply it.
 			IW7::PhysicsAsset* brushmodel_physics = nullptr;
 			{
 				auto shaped = 0;
@@ -911,8 +733,6 @@ namespace ZoneTool::IW5
 					brushmodel_physics = allocator.allocate<IW7::PhysicsAsset>();
 					brushmodel_physics->name = BRUSHMODEL_PHYSICS_ASSET;
 
-					// The asset is generated rather than copied: build_physics_asset
-					// reproduces the shipped dummy byte for byte.
 					ZoneTool::IW7::havok::builder::physics_asset_input physics{};
 					physics.body_name = "scriptbrushmodeldummy";
 
@@ -926,8 +746,6 @@ namespace ZoneTool::IW5
 							static_cast<unsigned int>(blob.size());
 					}
 
-					// One static body, no constraints, and one empty SFX/VFX event slot each
-					// -- matching the shipped dummies.
 					brushmodel_physics->numRigidBodies = 1;
 					brushmodel_physics->numConstraints = 0;
 					brushmodel_physics->numSFXEventAssets = 1;
@@ -951,8 +769,6 @@ namespace ZoneTool::IW5
 				new_asset->cmodels[i].radius = clipmap->cmodels[i].radius;
 				new_asset->cmodels[i].info = info;
 
-				// cmodels[0] is the world submodel and never gets a body: stock leaves its
-				// physicsAsset null, which makes its shape index a don't-care.
 				const auto shape_index = i == 0 ? 0xFFFF : cmodel_shape_index[i];
 				new_asset->cmodels[i].physicsShapeOverrideIdx = shape_index;
 				new_asset->cmodels[i].physicsAsset =
@@ -1022,7 +838,6 @@ namespace ZoneTool::IW5
 							return IW7::DYNENT_TYPE_INVALID;
 						};
 
-						// scriptable dynent does not want to spawn in???
 						if (dynent_def->type == DYNENT_TYPE_DESTRUCT)
 						{
 							ZONETOOL_INFO("converting dynent destruct into scriptable");
@@ -1031,33 +846,10 @@ namespace ZoneTool::IW5
 
 							new_dynent_def->instanceIndex = static_cast<unsigned int>(500 + scriptable_defs.size() - 1);
 							new_dynent_def->type = IW7::DYNENT_TYPE_HINGE;
-							// The type-3 dynent is the bridge between the map and the
-							// scriptable instance.  It still needs its base model: the
-							// client dynent registration seeds activeModel from
-							// DynEntityDef::baseModel before the scriptable state events
-							// are evaluated.  Leaving this null makes the association
-							// exist, but leaves the prop invisible because the initial
-							// client registration has no model to activate.
-							//new_dynent_def->baseModel =
-							//	reinterpret_cast<IW7::XModel*>(dynent_def->xModel);
-							//new_dynent_def->baseModel =
-							//	reinterpret_cast<IW7::XModel*>(dynent_def->xModel);
-							// Stock type-3 scriptable associations retain the source dynent
-							// pose.  The scriptable instance also stores this placement, but
-							// the dynent association uses its own pose during registration.
-							// Leaving it zeroed associates the scriptable at the origin.
 							memcpy(&new_dynent_def->pose, &dynent_def->pose, sizeof(GfxPlacement));
 							new_dynent_def->linkTo = nullptr;
-							// Type 3 is IW7's map-scriptable association.  Stock entries //retain the
-							// source dynent contents in this 16-bit field; leaving it zero //changes
-							// the association's physics/contents classification.
-							// Every stock type-3 association has a nonzero class here; 1 is //the
-							// ordinary static scriptable association used by the majority of //them.
 							new_dynent_def->unk5 = 1;
 							new_dynent_def->unk6 = static_cast<short>(dynent_def->contents);
-							// DynEntCl_InitEntities tests this flag before calling
-							// DynEntCL_AddEntity.  Without it the type-3 association is
-							// left inactive and the scriptable can never spawn.
 							new_dynent_def->spawnEnabled = true;
 						}
 						else
@@ -1067,11 +859,6 @@ namespace ZoneTool::IW5
 							{
 								memcpy(&new_dynent_def->initialPose, &dynent_def->pose, sizeof(GfxPlacement));
 
-								// A clutter dynent whose model has no PhysCollmap (CoD4's
-								// me_plastic_crate1) would otherwise keep a static mesh body,
-								// which Havok never simulates. Ask the model converter for a
-								// bounds box at the dynent's preset mass; the clipmap dumper
-								// re-dumps the model so the request takes effect.
 								if (dynent_def->xModel && !dynent_def->xModel->physCollmap)
 								{
 									const auto mass = dynent_def->physPreset && dynent_def->physPreset->mass > 0.0f
@@ -1126,7 +913,7 @@ namespace ZoneTool::IW5
 				auto* dyn = &new_asset->dynEntDefList[0][i + base_index];
 				dyn->type = IW7::DYNENT_TYPE_SCRIPTABLEINST;
 				dyn->instanceIndex = static_cast<unsigned int>(500 + scriptable_defs.size());
-				dyn->unk4 = i; // reserved index
+				dyn->unk4 = i;
 				dyn->spawnActive = true;
 				dyn->unk5 = 4;
 				dyn->unk6 = 0x666;
@@ -1147,12 +934,6 @@ namespace ZoneTool::IW5
 			std::fill_n(&new_asset->dynEntPhysicsSetupTail[0][0], 4,
 				static_cast<unsigned short>(0xFFFF));
 
-			// IW5 has no transient dynent-zone metadata.  Converted dynents are all
-			// base-world entities (isTransient == false), so do not fabricate a
-			// transient group containing them.  The transient loader walks this list
-			// and a synthetic base group causes it to repeatedly process the same
-			// physics/scriptable entities.  Stock base-world maps leave these fields
-			// empty when there are no transient dynents.
 			new_asset->dynEntTransientGroupCount = 0;
 			new_asset->dynEntTransientGroups = nullptr;
 			new_asset->dynEntTransientGroupRuntime[0] = nullptr;
@@ -1175,14 +956,6 @@ namespace ZoneTool::IW5
 				sizeof(IW7::ScriptableInstance) *
 				new_asset->scriptableMapEnts.totalInstanceCount);
 
-			// IW7 does not rebuild these part-runtime pools until after the map has
-			// been loaded.  They nevertheless must be present in the serialized
-			// ScriptableMapEnts: the client initialization path passes the pool
-			// count to Scriptable_GetPartRuntime and dereferences its result.  A
-			// zero count/null pointer therefore crashes while loading the map
-			// (sub_140BEC6A0 at 0x140BEC6C1).  Stock dumps contain zeroed stateId
-			// entries, so allocate zero-initialized entries for the complete
-			// instance range; the runtime builder can compact/rebuild them later.
 			const auto part_runtime_capacity = new_asset->scriptableMapEnts.totalInstanceCount;
 			new_asset->scriptableMapEnts.runtimeData.partRuntimeCount =
 				static_cast<int>(part_runtime_capacity);
@@ -1211,7 +984,6 @@ namespace ZoneTool::IW5
 			const auto write_scriptable_placement = [](IW7::ScriptableInstanceContext& context,
 				const GfxPlacement& pose)
 			{
-				// engine convention ([pitch, yaw, roll] degrees, positive pitch down) - see Utils/Math.hpp
 				context.origin[0] = pose.origin[0];
 				context.origin[1] = pose.origin[1];
 				context.origin[2] = pose.origin[2];
@@ -1225,17 +997,12 @@ namespace ZoneTool::IW5
 			{
 				auto& instance = new_asset->scriptableMapEnts.instances[500 + i];
 				instance.contextHeader.context.def = scriptable_defs[i].def;
-				instance.contextHeaderLocalClient[0].context.def = scriptable_defs[i].def; // localclient 0
-				instance.contextHeaderLocalClient[1].context.def = scriptable_defs[i].def; // localclient 1
+				instance.contextHeaderLocalClient[0].context.def = scriptable_defs[i].def;
+				instance.contextHeaderLocalClient[1].context.def = scriptable_defs[i].def;
 				write_scriptable_placement(instance.contextHeader.context, scriptable_defs[i].pose);
 				write_scriptable_placement(instance.contextHeaderLocalClient[0].context, scriptable_defs[i].pose);
 				write_scriptable_placement(instance.contextHeaderLocalClient[1].context, scriptable_defs[i].pose);
 
-				// These are serialized runtime event-stream buffers, not optional
-				// pointers.  IW7 adds an 8-byte server header and a 16-byte
-				// local-client header to the definition stream.  Thus the generated
-				// four-byte stream becomes the stock 12/20-byte buffers, while a
-				// definition with a larger stream scales automatically.
 				const auto definition_event_stream_size =
 					static_cast<unsigned int>(scriptable_defs[i].def->eventStreamSize);
 				const auto server_event_stream_size = definition_event_stream_size + 8u;
@@ -1258,13 +1025,11 @@ namespace ZoneTool::IW5
 				std::fill_n(instance.contextHeaderLocalClient[1].context.eventStreamBuffer,
 					local_client_event_stream_size, static_cast<char>(0));
 
-				// stock map does this
 				std::fill_n(reinterpret_cast<int*>(instance.contextHeader.unk02), 2, -1);
 				std::fill_n(reinterpret_cast<int*>(instance.contextHeaderLocalClient[0].unk02), 3, -1);
 				std::fill_n(reinterpret_cast<int*>(instance.contextHeaderLocalClient[1].unk02), 3, -1);
 			}
 
-			// Reserved dynent pools are initialized by IW7 after the zone is loaded.
 			new_asset->scriptableMapEnts.reservedDynents[0].numReservedDynents = reserved_dynents;
 			new_asset->scriptableMapEnts.reservedDynents[0].reservedDynents =
 				allocator.allocate<IW7::ScriptableReservedDynent>(new_asset->scriptableMapEnts.reservedDynents[0].numReservedDynents);
@@ -1330,14 +1095,6 @@ namespace ZoneTool::IW5
 			IW7_asset->numStaticModelCollisionModelLists = 0;
 			IW7_asset->staticModelCollisionModelLists = nullptr;
 
-			// World collision. IW7 has no brush/BSP collision at all -- clipMap_t::info is
-			// just planes -- so the entire collidable world has to be generated as a single
-			// hknpCompressedMeshShape. See docs/iw7-havok-collision.md.
-			//
-			// This runs BEFORE the mapents are generated, which is a hard ordering and not a
-			// preference: the ents shape list has to be built on top of this blob's tag
-			// table, because IW7 decodes every shape in the map -- world mesh included --
-			// against the single table registered from the main shape list.
 			IW7_asset->havokWorldShapeDataSize = 0;
 			IW7_asset->havokWorldShapeData = nullptr;
 			std::vector<ZoneTool::IW7::havok::builder::shape_tag> world_shape_tags;
@@ -1346,9 +1103,6 @@ namespace ZoneTool::IW5
 				if (!world.triangles.empty() || !world.convexes.empty())
 				{
 					ZoneTool::IW7::havok::builder::mesh_input input{};
-					// Brushes arrive as convexes (ZT_HAVOK_BRUSH_CONVEX, default on) and become
-					// convex custom primitives; the builder counts what it emits for the shape
-					// list's convexCounts itself.
 					input.convexes.reserve(world.convexes.size());
 					for (auto& cvx : world.convexes)
 					{
@@ -1362,7 +1116,6 @@ namespace ZoneTool::IW5
 					}
 					decltype(world.convexes){}.swap(world.convexes);
 
-					// Triangles only: a convex custom primitive is a point set with no winding.
 					const auto* flip_winding = std::getenv("ZT_HAVOK_FLIP_WINDING");
 					const auto reverse_winding = flip_winding && flip_winding[0] == '1';
 					if (reverse_winding)
@@ -1377,8 +1130,6 @@ namespace ZoneTool::IW5
 						{
 							if (tri.is_quad)
 							{
-								// Preserve the quad's ring while reversing its normal:
-								// (v0,v1,v2,v3) becomes (v0,v3,v2,v1).
 								std::swap(tri.verts[1], tri.vert3);
 							}
 							else
@@ -1410,19 +1161,12 @@ namespace ZoneTool::IW5
 					}
 					else
 					{
-						// build_world_shape logs why. A null blob means no world collision,
-						// which is survivable for loading but the map will have nothing to
-						// stand on.
 						ZONETOOL_WARNING("clipmap: no havok world shape generated for \"%s\"",
 							asset->name);
 					}
 				}
 			}
 
-			// The mapents carry every trigger volume in the map, so this is not just a name
-			// reference -- it is where the converted triggers live. The clipmap is dumped
-			// with only the name (IClipMap::dump calls dump_asset on it), but the object has
-			// to be real so the dumper can write it out as the MapEnts asset it points at.
 			IW7_asset->mapEnts = generate_mapents(asset, allocator, world_shape_tags);
 			decltype(world_shape_tags){}.swap(world_shape_tags);
 
@@ -1437,12 +1181,6 @@ namespace ZoneTool::IW5
 				IW7_asset->stages[i].entityUID = 0x3A83126F;
 			}
 
-			// stageTrigger is a second trigger set, indexed by Stage::triggerIndex instead of
-			// by an entity, and in every stock IW7 map it holds exactly the same models, hulls
-			// and slabs as MapEnts::trigger. It stays empty here because IClipMap::dump does
-			// not write these three arrays to the .colmap stream -- populating them would put
-			// non-zero counts in the struct with no array data behind them and desync the
-			// linker's parse. Carrying them across needs a dumper change on both sides.
 			IW7_asset->stageTrigger.count = 0;
 			IW7_asset->stageTrigger.models = nullptr;
 			IW7_asset->stageTrigger.hullCount = 0;
@@ -1454,10 +1192,6 @@ namespace ZoneTool::IW5
 			IW7_asset->stageTrigger.windingPointCount = 0;
 			IW7_asset->stageTrigger.windingPoints = nullptr;
 
-			// With stageTrigger empty the stage list has nothing to index. CM_GetStageFromPoint
-			// walks stages[1..stageCount) and feeds each stage's triggerIndex straight into the
-			// hull/slab test with no bounds check, but bails out entirely at stageCount <= 1 --
-			// so that is the safe ceiling until stage triggers actually survive the dump.
 			if (IW7_asset->stageCount > 1)
 			{
 				ZONETOOL_WARNING("clipmap: %u stages but no stage triggers survive the dump -- "
@@ -1465,7 +1199,6 @@ namespace ZoneTool::IW5
 				IW7_asset->stageCount = 1;
 			}
 
-			// this should be fine.
 			IW7_asset->broadphaseMin[0] = -131072.f;
 			IW7_asset->broadphaseMin[1] = -131072.f;
 			IW7_asset->broadphaseMin[2] = -131072.f;
@@ -1473,7 +1206,7 @@ namespace ZoneTool::IW5
 			IW7_asset->broadphaseMax[1] = 131072.f;
 			IW7_asset->broadphaseMax[2] = 131072.f;
 			
-			IW7_asset->physicsCapacities; // these might get set during runtime
+			IW7_asset->physicsCapacities;
 
 			IW7_asset->numCollisionHeatmapEntries = 0;
 			IW7_asset->collisionHeatmap = nullptr; // todo...

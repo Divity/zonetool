@@ -33,40 +33,23 @@ import json
 import os
 import re
 
-# The three model/world texture slots, as (semantic, typeHash). Confirmed against stock
-# materials on both the packed and unpacked techniques - the hash identifies the slot and the
-# technique decides how it is read, which is why the same hash carries semantic 2 on
-# mo_l_sm_replace_i0c0s0n0 and semantic 14 on its p0 form.
 SLOT_COLOUR = (2, 2695565377)
 SLOT_NORMAL = (5, 1507003663)
 SLOT_SPEC = (8, 887934131)
 
-# IW3's d0. IW5 files the detail map under semantic 2 next to the colour map and tells them apart
-# by hash alone; IW7 reads it at semantic 3 on both the packed and unpacked forms (412 stock
-# materials). Only `replace` has d0 techniques - no ndw_blend, atest or wc_ form exists - so on
-# every other blend the feature is still dropped.
 SLOT_DETAIL = (3, 3948059469)
 
-# packed slots: same hashes, different semantics, and no separate specular
 PACKED_COLOUR = (14, 2695565377)
 PACKED_NORMAL = (15, 1507003663)
 
-# The pa0 third slot: the opacity _packed_cs gave up when it took specular into its alpha. Shares
-# its hash with the specular-occlusion slot - the technique decides how it is read - and stock
-# always fills it with a <colour>_00000000_packed_a.
 PACKED_ALPHA = (16, 2771134132)
 
-# IW3 writes the blend as a letter in the feature string; IW7 spells it as a word. These are
-# different techniques, not spellings of one - replace vs blend changes what reaches the
-# framebuffer - so a candidate is only ever considered within its own blend.
 BLEND = {
     "r0": "replace",
     "b0": "ndw_blend",
     "t0": "atest",
 }
 
-# IW3 feature tokens that map onto an IW7 slot. d0 (detail), p0 and the rest have no slot in
-# these techniques and are dropped, which is what the hand table did too.
 FEATURE_SLOT = {
     "c0": SLOT_COLOUR,
     "n0": SLOT_NORMAL,
@@ -106,9 +89,6 @@ def iw7_slot_signatures(iw7_root):
     return out
 
 
-# Middle tokens that exist in raw/techsets but that no material is ever compiled onto, so a row
-# for them is dead weight. hsm is the shadow-map variant the material compiler resolves before it
-# writes the material: CoD4 ships 697 of them and not one appears as a material's techset.
 DEAD_MIDDLES = ("hsm",)
 
 
@@ -130,10 +110,6 @@ def wanted_signature(tokens):
     return frozenset(FEATURE_SLOT[t] for t in tokens if t in FEATURE_SLOT)
 
 
-# Slots the converter can fill with a default when a technique binds one the source material has
-# no texture for. These mirror the `required_slot` constants in Material.cpp; a technique whose
-# stock signature contains anything outside this set cannot be targeted safely, because the
-# missing bind is a crash rather than a missing texture.
 FILLABLE = {
     SLOT_COLOUR: "slot_colour",
     SLOT_NORMAL: "slot_normal",
@@ -144,8 +120,6 @@ FILLABLE = {
 }
 
 
-# IW7 spells the feature list in a fixed order - i0c0s0o0n0d0 - so a composed name has to follow
-# it. d0 sits after n0, which is where stock puts it: mo_l_sm_replace_i0c0s0n0d0p0.
 def canonical(prefix, blend, kept):
     family = "mo" if prefix == "mc" else "wc"
     ordered = [t for t in ("c0", "s0", "n0", "d0") if t in kept]
@@ -182,7 +156,7 @@ def choose(prefix, blend, tokens, sigs):
             continue
         stock_sig, sig_count, _usage = entry
         if any(slot not in FILLABLE for slot in stock_sig):
-            continue  # binds something we cannot supply
+            continue
         return candidate, stock_sig, sig_count
     return None, None, 0
 
@@ -204,19 +178,12 @@ def main():
         for p in glob.glob(os.path.join(args.iw3, "raw", "techsets", "*.techset"))
     )
 
-    # CoD4's raw/techsets covers IW3, but a converted map can arrive through IW5, whose material
-    # compiler emits names IW3 never had (a trailing p0, for one). Those have no .techset on
-    # disk, so seed them from whatever the current table already knows.
     if args.seed:
         with open(args.seed, "r", encoding="utf-8", errors="replace") as handle:
             body = handle.read()
         start = body.find("mapped_techsets =")
         end = body.find("mapped_techsets_effect_vertlit")
         if start >= 0:
-            # Both spellings a row can take: the generated brace form {"src", {"dst"...}} and the
-            # hand-written {"src", make_techset_map("dst"...)}. Matching only the first silently
-            # dropped every IW5-only name in a hand-written table, which is exactly the set this
-            # option exists to rescue.
             segment = body[start:end if end > start else None]
             for key in re.findall(r'\{"([^"]+)",\s*(?:\{"|make_techset_map\(|\w+\})', segment):
                 names.add(key)
@@ -245,25 +212,11 @@ def main():
             stats["ambiguous signature"] += 1
         required[regular] = stock_sig
 
-        # Only an opaque technique may be packed. _packed_cs spends the colour map's alpha
-        # channel on specular, and a blend technique reads that same channel as opacity while
-        # an atest one reads it as the cutout mask - so packing either silently replaces the
-        # transparency with the specular value. Stock IW7 bears this out: of the techsets its
-        # materials sit on, atest uses p0 0 times out of 2124 and blendadd 7 out of 1168,
-        # against 11527 of 38861 for replace. Where stock does pack a transparent material it
-        # reaches for pa0, which is the same two slots plus a separate alpha map at semantic
-        # 16 (2360 of those bind an _a image). We have no such map to emit, so the honest
-        # target is the unpacked technique, which is what 93% of stock blend materials use.
-        # An opaque technique packs into p0; one that reads alpha packs into pa0, which restores
-        # the opacity _packed_cs cannot carry as a separate map at semantic 16. A techset has one
-        # form or the other, never both, so these are mutually exclusive by construction.
         packed = ""
         packed_alpha = ""
         if BLEND[blend] == "replace":
             packed = regular + "p0"
             packed_sig = sigs.get(packed)
-            # The detail slot is not packed away - it survives into the p0/pa0 form at its own
-            # semantic 3 - so a d0 target's packed signature carries it alongside the pair.
             want = {PACKED_COLOUR, PACKED_NORMAL}
             if "d0" in regular:
                 want.add(SLOT_DETAIL)

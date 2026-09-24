@@ -1,8 +1,3 @@
-# Dump struct layouts from the IW7 database's type system as JSON.
-# Usage: idat.exe -A -Lx.log -S"dump_types.py <out.json> <Type1,Type2,...>" <db.i64>
-#
-# The IW7 database carries hand-built, correct IW7 struct definitions, so its type library is
-# the authority on offsets and sizes - better than re-deriving them from the C++ headers.
 import idaapi, idc, ida_typeinf
 import json
 
@@ -34,7 +29,6 @@ def flatten(ti, prefix, base, rows, depth=0):
         nm = prefix + m.name
         sz = mt.get_size()
         rows.append({"name": nm, "offset": off, "size": sz, "type": str(mt)})
-        # expand a nested struct that is not a pointer and not an array of structs
         if mt.is_struct() and not mt.is_ptr():
             flatten(mt, nm + ".", off, rows, depth + 1)
 
@@ -57,8 +51,6 @@ def record(name):
 for r in ROOTS:
     record(r)
 
-# also record the size of every distinct struct type referenced by the roots, so the
-# .gfxmap parser knows how many bytes each dumped array element takes
 extra = set()
 for name, rows in out["layout"].items():
     for row in rows:

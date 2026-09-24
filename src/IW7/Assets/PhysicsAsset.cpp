@@ -15,6 +15,8 @@ namespace ZoneTool::IW7
 			return;
 		}
 
+		zonetool::filesystem::csv_buffer_line("physicsasset", asset->name);
+
 		write.dump_single(asset);
 		write.dump_string(asset->name);
 

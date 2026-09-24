@@ -17,12 +17,23 @@ namespace mapents::converter::iw5
 			std::smatch match{};
 			if (!line.starts_with("0 ") && std::regex_search(line, match, expr))
 			{
-				const auto id = std::atoi(match[1].str().data());
+				const auto token = match[1].str();
+
+				const auto has_digit = token.find_first_of("0123456789") != std::string::npos;
+				const auto has_other = token.find_first_not_of("0123456789 \t") != std::string::npos;
+				if (!has_digit || has_other)
+				{
+					out_buffer.append(line);
+					out_buffer.append("\n");
+					continue;
+				}
+
+				const auto id = std::atoi(token.data());
 				const auto value = match[2].str();
 
 				std::string key = gsc::iw5::gsc_ctx->token_name(
 					static_cast<std::uint16_t>(id));
-				if (!key.starts_with("_id_"))
+				if (!key.empty() && !key.starts_with("_id_"))
 				{
 					out_buffer.append(va("\"%s\" \"%s\"", key.data(), value.data()));
 					out_buffer.append("\n");

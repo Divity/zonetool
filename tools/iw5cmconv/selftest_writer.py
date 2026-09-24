@@ -137,9 +137,6 @@ def tree_top(buf, first_leaf, count, leaf_nodes):
 def tree_section(buf, count, first_leaf=0):
     if count <= 1:
         buf.fill(3)
-        # A leaf's data byte is (primitiveIndex << 1); bit 0 clear marks the leaf and the
-        # upper 7 bits are the primitive it bounds. Stock always uses a permutation of
-        # 0..primitiveCount-1 here.
         buf.u8((first_leaf << 1) & 0xFE)
         return
     left = count // 2
@@ -200,7 +197,6 @@ def build(tris, convex_radius=0.0):
         first_run.append(len(runs) // 4)
         run_count.append(data_runs(runs, s["tags"]))
 
-    # ---- simd tree (4-wide BVH over primitives) ----
     items = []
     for si, sc in enumerate(sections):
         for pi, pr in enumerate(sc["prims"]):
@@ -257,7 +253,7 @@ def build(tris, convex_radius=0.0):
     fields = []
     for c in (1, 1, 1, 1, 1, 2):
         fields.append(buf.hkarray(c))
-    buf.i32(0); buf.reserve(4)            # numWorldGeoShapes
+    buf.i32(0); buf.reserve(4)
     for c in (len(palette), 1, 1):
         fields.append(buf.hkarray(c))
     assert len(buf) - sl == 152, len(buf) - sl
@@ -289,7 +285,7 @@ def build(tris, convex_radius=0.0):
 
     buf.reserve(16)
     buf.u16(4); buf.u8(bits_per_key); buf.u8(2); buf.f32(convex_radius)
-    buf.u64(0); buf.reserve(8); buf.reserve(8)     # properties* + hknpShape tail padding
+    buf.u64(0); buf.reserve(8); buf.reserve(8)
     buf.u32(0xFFFFFFFF); buf.u32(0)
     buf.hkarray(0); buf.hkarray(0)
     buf.u32(0xFFFFFFFF); buf.reserve(4)

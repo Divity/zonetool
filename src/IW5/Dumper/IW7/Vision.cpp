@@ -9,24 +9,6 @@ namespace ZoneTool::IW5::IW7Dumper
 {
 	namespace
 	{
-		// The IW7 vision schema, in stock key order, with the value each key starts from.
-		//
-		// Source visions (CoD4 and MW3) share none of these keys except the two primary light
-		// tweaks, so anything left unset falls back to the engine default - and those defaults
-		// are not always safe: sunshadowSampleSizeNear defaults to 0.25, which pulls the sun
-		// cascades in so close that every distant shadow falls back to the source game's coarse
-		// lightmap bake. A converted vision therefore writes the whole schema.
-		//
-		// Where the starting values come from:
-		//   grading (colorization, lmh, levels)  identity; the source film settings are mapped in
-		//   exposure / tonemap                   mp_breakneck, except tonemapWhitePoint 512 - the parameters interlock,
-		//                                        so one coherent stock set rather than per-key picks
-		//   fog, volumetrics, cloud shadows,     off: the source vision has none of them, and fog in
-		//   light scatter, dust, analog, chroma  CoD4 / MW3 comes from the map script, not the vision
-		//   sun shadows                          stock MP range is 0.4 - 1.0 (dome 0.4, afghan 0.8,
-		//                                        breakneck 0.99, paris 1); 0.99 is verified in game
-		//   everything else                      the majority value across 7 stock primary visions
-		// clut0Image is left out: every stock value names that map's own colour lookup image.
 		struct vision_key
 		{
 			const char* key;
@@ -168,7 +150,6 @@ namespace ZoneTool::IW5::IW7Dumper
 			return _stricmp(a.data(), b) == 0;
 		}
 
-		// One "key value" or "key "value"" per line; comments and blank lines are skipped.
 		key_values parse(const std::string& text)
 		{
 			key_values out;
@@ -260,18 +241,6 @@ namespace ZoneTool::IW5::IW7Dumper
 			return va("%g", std::clamp(-100.0f * to_float(desaturation, 0.0f), -100.0f, 100.0f));
 		}
 
-		// The film settings are the source games' whole grading pipeline; IW7 splits the same
-		// intent across lmh (per-range colour scale and saturation). What transfers:
-		//
-		//   r_filmDarkTint / MediumTint / LightTint  -> lmhLow / Mid / HighScale
-		//       all three are per-channel multipliers over shadows, midtones and highlights
-		//   r_filmDesaturation (0..1)                -> lmhLow / Mid / HighSaturation = -100 * d
-		//   r_filmDesaturationDark (MW3)             -> lmhLowSaturation, overriding the above
-		//       stock IW7 saturation values (-15, -20) read as percent
-		//
-		// What does not: r_filmContrast and r_filmBrightness were tuned for the source game's
-		// LDR film pass, and IW7's tonemapper already sets contrast and exposure - carrying them
-		// over would stack two curves. r_filmInvert has no IW7 counterpart.
 		void map_film(const key_values& src, key_values& out)
 		{
 			const auto* enable = find(src, "r_filmEnable");
@@ -346,9 +315,6 @@ namespace ZoneTool::IW5::IW7Dumper
 
 			map_film(src, out);
 
-			// A source key IW7 also reads keeps its value. The primary light tweaks are the only
-			// ones CoD4 / MW3 share, and MW3 gates them behind r_primaryLightUseTweaks: with the
-			// gate off the source game ignores them, so IW7 keeps the neutral 1.
 			const auto* use_tweaks = find(src, "r_primaryLightUseTweaks");
 			const auto tweaks_enabled = !use_tweaks || to_float(*use_tweaks, 1.0f) != 0.0f;
 

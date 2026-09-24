@@ -122,12 +122,7 @@ namespace ZoneTool
 
 			referencedAssets.clear();
 
-			// Visions are rewritten once, after every asset is on disk: the source game's file is
-			// only final once the rawfile dumper has written it.
 			::ZoneTool::IW5::IW7Dumper::convert_visions(std::string(&fastfile[0]));
-			// A dumper may have written an asset out under a different name than the one the
-			// game knows it by - see csv_buffer_line - so the lines are resolved here, once
-			// every asset in the zone has been through its dumper.
 			for (const auto& line : zonetool::filesystem::csv_take_lines())
 			{
 				fprintf(csvFile, "%s\n", line.data());
@@ -168,7 +163,11 @@ namespace ZoneTool
 				if (csvFile)
 				{
 					auto xassettypes = reinterpret_cast<char**>(0x7C6208);
-					zonetool::filesystem::csv_buffer_line(xassettypes[type], GetAssetName(type, ptr));
+					const auto csv_type = zonetool::csv_type_for_target(xassettypes[type]);
+					if (!csv_type.empty())
+					{
+						zonetool::filesystem::csv_buffer_line(csv_type, GetAssetName(type, ptr));
+					}
 				}
 
 				// check if we're done loading the fastfile

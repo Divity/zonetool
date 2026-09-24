@@ -5,8 +5,6 @@
 #include "MapEnts.hpp"
 #include "XModel.hpp"
 
-// The IW5->IW7 model converter's request registry (Converter/IW7/Assets/XModel.hpp);
-// declared here because that header drags in IW7 types this project does not see.
 namespace ZoneTool::IW5::IW7Converter
 {
 	bool wants_dynamic_box(const std::string& model, float* mass);
@@ -688,12 +686,6 @@ namespace ZoneTool
 						continue;
 					}
 
-					// CM_LoadStaticModels builds invScaledAxis = transpose(axis) / scale, and CM_TraceStaticModel
-					// uses it as a row vector: local = MatrixTransformVector(world - origin, invScaledAxis).
-					// model->world is therefore the inverse applied the same way (local * inv), i.e.
-					// origin + scale * sum_j local[j] * axis[j] -- exactly the GfxStaticModelDrawInst placement.
-					// Applying inv as a column vector transposes the rotation (checked on stock mp_bog:
-					// 3919 of 4005 static models are rotated and would come out mirrored).
 					const auto& axis = sm.invScaledAxis;
 					const auto det =
 						axis[0][0] * (axis[1][1] * axis[2][2] - axis[1][2] * axis[2][1]) -
@@ -758,12 +750,6 @@ namespace ZoneTool
 			// dump clipmap
 			IW4::IClipMap::dump(iw4_asset);
 
-			// The IW7 target simulates clutter dynents with a dynamic Havok body built from
-			// the model's PhysCollmap. A clutter model with no physGeoms (me_plastic_crate1)
-			// was registered for a bounds-box asset during that conversion; the model itself
-			// may already be on disk with a static one, so run it through the model chain
-			// again now that the request is known. Done here rather than in the IW5 dumper
-			// because the IW5-level dynent xModel pointers are placeholders on this path.
 			if (zonetool::dumping_target == zonetool::dump_target::iw7)
 			{
 				std::vector<XModel*> redumped;

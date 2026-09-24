@@ -1,10 +1,3 @@
-# Exploratory: find how IW7 stores its asset struct-layout member tables.
-#
-# IW8 registers layouts through Load_RegisterStructMemberSize(typeName, typeHash, memberType,
-# memberTypeHash, memberName, memberNameHash, offset, size, ...). IW7's ship build has the same
-# mechanism but no symbols, and a known member table was previously located at 0x1414A2EF0
-# (HavokPhysicsShapeList). This dumps that table's raw shape plus every data reference to a set
-# of light-grid type-name strings, so the record format can be read off directly.
 import idaapi, idc, ida_bytes, ida_segment, ida_name, idautils, ida_nalt
 import sys
 
@@ -46,7 +39,6 @@ for i in range(-4, 60):
     s = cstr(v)
     w("  %014X +%3d  %016X  %s" % (ea, i * 8, v, ("-> %r" % s) if s else ""))
 
-# ---------------------------------------------------------------- string scan
 TARGETS = [
     "GfxLightGrid", "GfxGpuLightGrid", "GfxGpuLightGridZone", "GfxSHProbeData",
     "GfxProbeData", "GfxVoxelTree", "GfxVoxelTreeHeader", "GfxVoxelInternalNode",
@@ -68,7 +60,6 @@ for seg_ea in idautils.Segments():
         continue
     ea = seg.start_ea
     end = seg.end_ea
-    # scan for NUL-terminated ascii runs matching a target exactly
     data = ida_bytes.get_bytes(ea, end - ea)
     if not data:
         continue
@@ -80,7 +71,6 @@ for seg_ea in idautils.Segments():
             if off < 0:
                 break
             addr = ea + off
-            # must start right after a NUL or at an aligned boundary, else it is a suffix
             if off == 0 or data[off - 1] == 0:
                 found.setdefault(t, []).append(addr)
             off += 1
@@ -90,7 +80,6 @@ for t in TARGETS:
     if not found.get(t):
         w("  %-30s (not found)" % t)
 
-# ---------------------------------------------------------------- xref walk
 w("")
 w("=== 8-byte-aligned data words pointing at those strings, with neighbours ===")
 wanted = set()

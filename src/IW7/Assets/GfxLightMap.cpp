@@ -30,6 +30,8 @@ namespace ZoneTool::IW7
 		auto file = filesystem::file(path);
 		file.open("wb");
 
+		zonetool::filesystem::csv_buffer_line("gfxlightmap", c_name);
+
 		ordered_json data;
 
 		for (auto i = 0; i < 3; i++)

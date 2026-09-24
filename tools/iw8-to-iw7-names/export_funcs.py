@@ -1,14 +1,8 @@
-# Headless IDA export: one JSONL record per function.
-# Usage: idat.exe -A -Lxx.log -S"export_funcs.py <outpath>" <db.i64>
 import idaapi, idautils, idc, ida_funcs, ida_bytes, ida_nalt, ida_name, ida_ua, ida_segment, ida_pro
 import json, sys, os, hashlib, time
 
 OUT = idc.ARGV[1] if len(idc.ARGV) > 1 else "funcs.jsonl"
 
-# auto_wait skipped: the database is already fully analysed and the post-upgrade
-# reanalysis queue costs an hour we do not need for a read-only export.
-
-# ---- instruction class map for the control-flow "shape" signature -------------
 CLS = {}
 for m in ("call",):                                   CLS[m] = "C"
 for m in ("jmp",):                                    CLS[m] = "J"
@@ -21,7 +15,7 @@ for m in ("push","pop"):                              CLS[m] = "S"
 def icls(m):
     c = CLS.get(m)
     if c: return c
-    if m.startswith("j"):   return "B"   # conditional branch
+    if m.startswith("j"):   return "B"
     if m.startswith("set"): return "E"
     if m.startswith("cmov"):return "V"
     return "O"
@@ -62,7 +56,7 @@ def get_str(ea):
     return s
 
 
-MININT = 0x100          # ignore tiny immediates (too common to discriminate)
+MININT = 0x100
 
 def export():
     t0 = time.time()

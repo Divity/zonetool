@@ -13,95 +13,23 @@
 #include <unordered_map>
 #include <unordered_set>
 
-// ---- Umbra tome -----------------------------------------------------------------------
-//
-// IW7 cannot draw a map that has no umbra tome. The static visibility worker
-// (iw7_ship_dump.exe 0x1405FB6D0) only ever fills the dpvs vis-data buffers from
-// inside its `if (g_world->umbraTomePtr)` block; with a null tome that block is
-// skipped entirely, nothing is ever marked visible, and the world draws empty.
-//
-// Inside that block, *any* non-zero Umbra query error falls through to
-// R_SetAllVisDataForScene (0x140DE3680), which memsets every vis buffer to 0xFF -
-// "draw everything, cull nothing". That error path is what converted maps used to
-// ride: a structurally empty tome parked outside the world made every query fail
-// with "camera outside Umbra view volume". It rendered, but with zero culling, and
-// r_umbra 0 (frustum only, which never reaches the fallback) drew a black screen.
-//
-// The real thing is produced by the Umbra 3.3.13 optimizer (dep/umbra3, driven by
-// umbra-tomegen.exe through X64/Utils/Umbra/UmbraTome.cpp). What this file decides
-// is which IW5 data becomes what:
-//
-//  * every static world surface is a TARGET carrying its own triangles, with user ID
-//    (0 << 28) | position in dpvs.sortedSurfIndex - 0x1405FAA30 marks
-//    surfaceVisData[sortedSurfIndex[id]], so the ID is the sorted position, not the
-//    surface index;
-//  * opaque world surfaces (blend and alpha test disabled, depth written, not sky)
-//    are additionally OCCLUDERs; everything else - alpha tested fences, glass,
-//    decals, sky - only ever gets culled, never culls;
-//  * static models are TARGETs described by their bounds box, user ID
-//    (1 << 28) | (index + 1), since 0x1405FAA30 marks smodelVisData[lodData[id]] and
-//    the converter writes lodData[i + 1] = i;
-//  * spot and omni primary lights are TARGETs boxed by origin +- radius; every other
-//    renderable category IW7 keys through the tome (directional lights, reflection
-//    probes, volumetrics, decal volumes) gets a box the size of the whole view
-//    volume, which no camera inside it can ever be occluded from, so those are
-//    simply never culled - exactly what the draw-everything tome did for them.
-//
-// Occlusion is therefore computed from drawn geometry only. Caulk has no drawn
-// surface, so a building whose back wall is caulk does not seal, which costs
-// culling but never correctness: Umbra only ever culls what the occluder set proves
-// hidden. Feeding clipmap brushes in as occluders is the obvious next step and is
-// what IW's own pipeline almost certainly did.
 namespace ZoneTool::IW5
 {
 	namespace IW7Converter
 	{
 		namespace
 		{
-			// Umbra 3 tome version accepted by IW7. Load_UmbraTome -> Umbra::Tome::init
-			// (0x140E92DB0) validates only four things: the magic's high word must be
-			// 0xD600, its low word must be in [0x12, 0x14], the tome must be 16 byte
-			// aligned, and umbraTomeSize must be >= m_size. Shipped IW7 maps use 0x14,
-			// which is also the version the 368 byte ImpTome layout belongs to.
 			constexpr unsigned int TOME_VERSION_MAGIC = 0xD6000014;
 
-			// read by R_Umbra_QueryStaticCamera (0x1405FAFD0) to scale the LOD
-			// distance, so it has to be a sane positive value. Shipped maps use 128
-			// (mp_paris, mp_fallen, mp_breakneck) or 512 (mp_afghan, mp_frontend).
 			constexpr float LOD_BASE_DISTANCE = 128.0f;
 
-			// The old stopgap: a structurally empty tome whose view volume sits at
-			// +200000 on every axis, well outside the +/-131072 IW5/IW7 BSP coordinates
-			// but still inside Umbra's own +/-262144 tree range, so every query reports
-			// "camera outside Umbra view volume" and the engine draws everything.
 			constexpr float DEAD_VOLUME_ORIGIN = 200000.0f;
 			constexpr float DEAD_VOLUME_SIZE = 64.0f;
 
-			// The view volume is the whole +/-262144 range Umbra itself uses for tree
-			// bounds, which is also what every shipped IW7 tome spans (their cluster scale
-			// of 8 is 524288 / 65536). It is not only where the player can be: IW7's sun
-			// and spot shadow views are Umbra queries from the light's viewpoint
-			// (0x1405FB190, QUERYFLAG_IGNORE_CAMERA_POSITION) whose start cells are the
-			// cells the light frustum's near plane quad intersects, so the empty space
-			// around the map needs cells connected to the map or casters go missing
-			// (verified in game 2026-09-19: back palm and dynent shadows). The optimizer
-			// skips empty tiles, so the cost is a few large outside cells.
 			constexpr float VIEW_VOLUME_HALF_EXTENT = 262144.0f;
 
-			// Targets described by a proxy box rather than their real triangles. VOLUME
-			// makes the optimizer count the box's interior, not only its faces: a
-			// world sized probe box has every face behind the map's outer walls, so
-			// without it Umbra (correctly) lists it in no interior cell and the probe
-			// vanishes as soon as the camera is in one; likewise a light's or model's
-			// box must stay listed while the camera is inside it. Verified in game
-			// 2026-09-19 (mp_test_h1: gun reflection lost in cells that did not list
-			// the probe, brush model culled where no object projected).
 			constexpr unsigned int BOX_TARGET = ZoneTool::Umbra::SCENE_OBJECT_TARGET | ZoneTool::Umbra::SCENE_OBJECT_VOLUME;
 
-			// CRC-32C (Castagnoli, reflected polynomial 0x82F63B78), init 0xFFFFFFFF
-			// with a final complement, over the bytes from m_size onwards. Verified
-			// against both shipped mp_paris tomes (0xB9729593 and 0xC24D4414). IW7 does
-			// not check it at load time; the optimizer writes the same one itself.
 			unsigned int compute_umbra_tome_crc32(const void* data, std::size_t size)
 			{
 				const auto* bytes = static_cast<const unsigned char*>(data);
@@ -121,8 +49,6 @@ namespace ZoneTool::IW5
 
 			IW7::Umbra::ImpTome* build_draw_everything_tome(allocator& allocator)
 			{
-				// the allocator zero-fills, which is what we want for every count and
-				// every DataPtr offset in the tome: no tiles, no clusters, no objects.
 				auto* tome = allocator.allocate<IW7::Umbra::ImpTome>();
 
 				tome->m_versionMagic = TOME_VERSION_MAGIC;
@@ -182,7 +108,6 @@ namespace ZoneTool::IW5
 				}
 			};
 
-			// GfxStateBits::loadBits[0] blend field values (GFXS_BLEND_*)
 			constexpr unsigned int BLEND_DISABLED = 0;
 			constexpr unsigned int BLEND_ZERO = 1;
 			constexpr unsigned int BLEND_ONE = 2;
@@ -209,10 +134,6 @@ namespace ZoneTool::IW5
 				return names[static_cast<int>(verdict)];
 			}
 
-			// The world's material pointers are whatever the source game handed us:
-			// IW3/Assets/GfxWorld.cpp:580 casts CoD4's IW3::Material straight through,
-			// and its layout differs from IW5's (34 vs 54 stateBitsEntry, hashIndex).
-			// Only the fields judged below are read, through the right layout.
 			struct material_view
 			{
 				const char* name = nullptr;
@@ -220,9 +141,6 @@ namespace ZoneTool::IW5
 				unsigned char state_bits_count = 0;
 				const GfxStateBits* state_bits = nullptr;
 				bool lit_opaque_region = false;
-				// stateBitsEntry of the base colour passes (unlit / emissive / lit /
-				// lit+sun), 0xFF where the material has no such technique. The spot and
-				// omni passes are additive by design and say nothing about opacity.
 				std::vector<unsigned char> base_pass_entries;
 			};
 
@@ -242,7 +160,6 @@ namespace ZoneTool::IW5
 					view.state_bits_count = static_cast<unsigned char>(iw3->stateBitsCount);
 					static_assert(sizeof(IW3::GfxStateBits) == sizeof(GfxStateBits));
 					view.state_bits = reinterpret_cast<const GfxStateBits*>(iw3->stateBitsTable);
-					// IW3: LIT 0, DECAL 1, EMISSIVE 2
 					view.lit_opaque_region = iw3->cameraRegion == IW3::CAMERA_REGION_LIT;
 					for (const auto technique : { IW3::TECHNIQUE_UNLIT, IW3::TECHNIQUE_EMISSIVE, IW3::TECHNIQUE_LIT,
 						IW3::TECHNIQUE_LIT_SUN, IW3::TECHNIQUE_LIT_SUN_SHADOW })
@@ -267,10 +184,6 @@ namespace ZoneTool::IW5
 				return view;
 			}
 
-			// A material is an occluder only if no state set it can be drawn with lets
-			// anything behind it show: no blending, no alpha test, depth written and no
-			// polygon offset (decals). Anything unsure is not an occluder; that only
-			// loses culling.
 			opaque_verdict judge_material(const material_view& material)
 			{
 				if (!material.name)
@@ -346,9 +259,6 @@ namespace ZoneTool::IW5
 				unsigned int view_box_model = 0;
 			};
 
-			// Builds one model per surface from the IW5 world vertex/index streams.
-			// Surface indices are relative to tris.firstVertex, as R_DrawWorldSurface
-			// draws them.
 			bool build_surface_model(const GfxWorld* asset, const unsigned int surface_index,
 				ZoneTool::Umbra::tome_model& model)
 			{
@@ -366,8 +276,6 @@ namespace ZoneTool::IW5
 					return false;
 				}
 
-				// vertexCount can span a large shared vertex range even when this surface
-				// references only a few triangles. Keep only the indexed vertices.
 				std::vector<int> remap(tris.vertexCount, -1);
 				model.vertices.reserve(static_cast<std::size_t>(std::min<unsigned int>(
 					tris.vertexCount, tris.triCount * 3u)) * 3);
@@ -407,7 +315,6 @@ namespace ZoneTool::IW5
 					return false;
 				}
 
-				// sorted position per surface index, which is what the surface user ID is
 				std::unordered_map<unsigned int, unsigned int> sorted_position;
 				sorted_position.reserve(world->dpvs.staticSurfaceCount);
 				for (unsigned int sorted = 0; sorted < world->dpvs.staticSurfaceCount; sorted++)
@@ -436,17 +343,14 @@ namespace ZoneTool::IW5
 				std::memcpy(volume.maxs, view.maxs, sizeof(volume.maxs));
 				input.view_volumes.push_back(volume);
 
-				// shared box for everything that must never be culled
 				const auto view_box_model = input.add_box_model(view.mins, view.maxs);
 				out.view_box_model = view_box_model;
 
-				// ---- surfaces --------------------------------------------------------------
 				for (unsigned int surface = 0; surface < asset->surfaceCount; surface++)
 				{
 					const auto sorted = sorted_position.find(surface);
 					if (sorted == sorted_position.end())
 					{
-						// not in the static sort list: nothing could mark it visible anyway
 						out.skipped_surfaces++;
 						out.unsorted_surfaces++;
 						continue;
@@ -464,7 +368,6 @@ namespace ZoneTool::IW5
 					ZoneTool::Umbra::tome_model model;
 					if (!build_surface_model(asset, surface, model))
 					{
-						// keep it drawable: a view sized box is never culled
 						input.objects.push_back({ view_box_model, user_id, BOX_TARGET });
 						out.skipped_surfaces++;
 						const auto& tris = asset->dpvs.surfaces[surface].tris;
@@ -501,7 +404,6 @@ namespace ZoneTool::IW5
 					input.objects.push_back({ model_index, user_id, flags });
 				}
 
-				// ---- static models ---------------------------------------------------------
 				if (asset->dpvs.smodelInsts)
 				{
 					for (unsigned int i = 0; i < asset->dpvs.smodelCount && i < ZoneTool::Umbra::USER_ID_INDEX_MASK; i++)
@@ -524,7 +426,6 @@ namespace ZoneTool::IW5
 					}
 				}
 
-				// ---- primary lights --------------------------------------------------------
 				for (unsigned int i = 0; i < world->primaryLightCount; i++)
 				{
 					auto model_index = view_box_model;
@@ -552,7 +453,6 @@ namespace ZoneTool::IW5
 					input.objects.push_back({ model_index, ZoneTool::Umbra::USER_ID_PRIMARY_LIGHT | i, BOX_TARGET });
 				}
 
-				// ---- everything else: never culled ----------------------------------------
 				const auto add_unbounded = [&](const unsigned int type, const unsigned int count)
 				{
 					for (unsigned int i = 0; i < count; i++)
@@ -588,7 +488,7 @@ namespace ZoneTool::IW5
 
 			world->numUmbraGates = 0;
 			world->umbraGates = nullptr;
-			world->umbraTomePtr = nullptr; // runtime pointer, filled in by Load_UmbraTome
+			world->umbraTomePtr = nullptr;
 
 			if (const auto* disable = std::getenv("ZT_UMBRA_DISABLE"); disable && *disable && *disable != '0')
 			{
@@ -626,11 +526,6 @@ namespace ZoneTool::IW5
 				}
 			}
 
-			// The optimizer drops any target that lands in no cell - for instance a
-			// panel sitting in the same voxel layer as an opaque wall - and a dropped
-			// target is a renderable nothing can ever mark visible. So diff what came
-			// back against what went in, turn the casualties into never-culled boxes
-			// and run again; if that still loses something, do not ship the tome.
 			ZoneTool::Umbra::tome_result result;
 			const auto view_box_model = scene.view_box_model;
 			for (int attempt = 0;; attempt++)
@@ -652,7 +547,6 @@ namespace ZoneTool::IW5
 						dropped++;
 						dropped_by_type[(object.user_id >> 28) & 7]++;
 						object.model = view_box_model;
-						// the box is the whole view volume; as an occluder it would wall the map in
 						object.flags = BOX_TARGET;
 					}
 				}
@@ -692,8 +586,6 @@ namespace ZoneTool::IW5
 			decltype(scene.input.models){}.swap(scene.input.models);
 			decltype(scene.input.objects){}.swap(scene.input.objects);
 
-			// The linker aligns the blob to 16 when it lays the zone out; here it just
-			// needs to be a byte buffer of exactly m_size.
 			auto* data = allocator.manual_allocate<char>(result.data.size());
 			std::memcpy(data, result.data.data(), result.data.size());
 			world->umbraTomeSize = static_cast<unsigned int>(result.data.size());

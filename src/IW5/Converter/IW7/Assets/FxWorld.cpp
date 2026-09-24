@@ -52,6 +52,9 @@ namespace ZoneTool::IW5
 			COPY_VALUE(glassSys.lastPieceDeletionTime);
 			COPY_VALUE(glassSys.initPieceCount);
 
+			const auto glass_physics = allocator.allocate<IW7::PhysicsAsset>();
+			glass_physics->name = "glasschunkdummydefault";
+
 			new_asset->glassSys.defs = allocator.allocate<IW7::FxGlassDef>(new_asset->glassSys.defCount);
 			for (unsigned int i = 0; i < new_asset->glassSys.defCount; i++)
 			{
@@ -66,7 +69,7 @@ namespace ZoneTool::IW5
 
 				COPY_ASSET(glassSys.defs[i].material);
 				COPY_ASSET(glassSys.defs[i].materialShattered);
-				new_asset->glassSys.defs[i].physicsAsset = nullptr; // fixme
+				new_asset->glassSys.defs[i].physicsAsset = glass_physics;
 
 				CREATE_EFFECT(glassSys.defs[i].pieceBreakEffect, "code/glass_shatter_piece");
 				CREATE_EFFECT(glassSys.defs[i].shatterEffect, "code/glass_shatter_64x64");

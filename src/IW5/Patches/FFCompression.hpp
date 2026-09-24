@@ -2,6 +2,7 @@
 
 #include <zstd.h>
 #include <zlib.h>
+#include <unordered_set>
 
 namespace ZoneTool
 {
@@ -37,6 +38,9 @@ namespace ZoneTool
 		class FFCompression : public IPatch
 		{
 		private:
+			static std::unordered_set<db_z_stream_s*> zstd_streams;
+			static bool stream_is_zstd(db_z_stream_s* strm);
+
 			static std::int32_t z_inflateInit(const char* version, db_z_stream_s* strm, int stream_size);
 			static void db_inflateInit();
 

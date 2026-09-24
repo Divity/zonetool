@@ -25,7 +25,6 @@ namespace ZoneTool::IW5
 		}
 		else if (zonetool::dumping_target == zonetool::dump_target::iw7)
 		{
-			// IW3/IW4 zones reach this with pointers of their own games, their dumpers handle those
 			if (get_linker_mode() == linker_mode::iw5)
 			{
 				dump_fx_materials_first(asset, FX_ELEM_TYPE_SPARKCLOUD, FX_ELEM_TYPE_DECAL, &IMaterial::dump);

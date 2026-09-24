@@ -6,7 +6,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gfxmap
 
-SM = 184          # sizeof GfxStaticModelDrawInst
+SM = 184
 OFF_ORIGIN, OFF_UNK0, OFF_UNK2, OFF_UNK3 = 0, 140, 144, 146
 
 
@@ -26,7 +26,6 @@ def analyse(path, tag):
         return
     print("\n### %s" % tag)
 
-    # ---------------- zones
     z = d["zones"]
     for i in range(c["zoneCount"]):
         nP, fP, nT, fT, fV, nV = struct.unpack_from("<6I", z, i * 88)
@@ -37,7 +36,6 @@ def analyse(path, tag):
               % (nP == c["probeCount"], nT == c["tetrahedronCount"],
                  nV == c["voxelStartTetrahedronCount"]))
 
-    # ---------------- voxel tree header: cell size and grid extent
     for i, h in enumerate(d["voxelTreeHeaders"]):
         if not h:
             continue
@@ -57,7 +55,6 @@ def analyse(path, tag):
               % (cells[0], cells[1], cells[2], dense, c["probeCount"],
                  100.0 * c["probeCount"] / dense if dense else 0))
 
-    # ---------------- probe positions: spacing
     pp = f32(d["probePositions"]).reshape(-1, 3)
     for ax in range(3):
         v = np.unique(np.round(pp[:, ax], 4))
@@ -67,7 +64,6 @@ def analyse(path, tag):
                   "frac part %.5f" % (ax, len(v), dif.min(), np.median(dif),
                                       v[0] - np.floor(v[0])))
 
-    # ---------------- are probes referenced?
     tets = u32(d["tetrahedrons"]).reshape(-1, 4)
     idx = tets & 0x1FFFF
     used = np.unique(idx)
@@ -77,7 +73,6 @@ def analyse(path, tag):
     print("  indexFlags bits17-30 nonzero: %d   bit31 set: %.1f%% of corners"
           % (int((hi != 0).sum()), 100.0 * ((tets >> 31) & 1).mean()))
 
-    # ---------------- tetrahedronVisibility
     tv = d["tetrahedronVisibility"]
     if tv:
         a = np.frombuffer(tv, dtype="<u4").reshape(-1, 16)
@@ -88,13 +83,11 @@ def analyse(path, tag):
                  100.0 * (a == 0).all(axis=1).mean(),
                  float(np.unpackbits(np.frombuffer(tv, dtype=np.uint8)).mean() * 512)))
 
-    # ---------------- voxelStartTetrahedron occupancy
     vs = u32(d["voxelStartTetrahedron"])
     empty = int((vs == 0xFFFFFFFF).sum())
     print("  voxelStartTetrahedron: %d leaves, %d empty (%.1f%%), %d distinct start tets"
           % (len(vs), empty, 100.0 * empty / len(vs), len(np.unique(vs[vs != 0xFFFFFFFF]))))
 
-    # ---------------- per-model gpuVisibleProbes slices
     sd = d["smodelDrawInsts"]
     gp = f32(d["gpuVisibleProbePositions"]).reshape(-1, 3) if d["gpuVisibleProbePositions"] else None
     n = c["smodelCount"]
@@ -116,7 +109,6 @@ def analyse(path, tag):
             m = layouts == lay
             print("     unk2=%d : %5d models, unk3 in [%d..%d]" %
                   (lay, int(m.sum()), int(counts[m].min()), int(counts[m].max())))
-        # THE question: are the sample points per model distinct, and where are they?
         dup_models = 0
         offs = []
         for i in range(n):
@@ -138,7 +130,6 @@ def analyse(path, tag):
                      np.linalg.norm(allo, axis=1).max()))
             print("     per-axis offset median (x,y,z) = (%.2f, %.2f, %.2f)"
                   % tuple(np.median(allo, axis=0)))
-            # for the dominant 2-point layout, what separates the pair?
             two = [ (gp[firsts[i]:firsts[i]+2] - origins[i]) for i in range(n)
                     if counts[i] == 2 and firsts[i] + 2 <= len(gp) ]
             if two:

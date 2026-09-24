@@ -1,16 +1,3 @@
-// umbra-tomegen: out-of-process driver for the Umbra 3.3.13 optimizer.
-//
-//   umbra-tomegen generate <scene> <out.tome> [--log <file>] [--threads N] [--verify]
-//   umbra-tomegen inspect <tome | gfxmap>
-//
-// The converter cannot host the optimizer itself: it runs as a 32-bit DLL inside
-// the source game, and the optimizer wants an x64 address space, its own threads
-// and a few hundred megabytes of scratch. So the converter serialises the scene
-// (X64/Utils/Umbra/UmbraScene.hpp), spawns this and reads the tome back.
-//
-// The output is a stock Umbra 3.2 "final" tome (version magic 0xD6000012). IW7's
-// runtime accepts 0x12..0x14 and keeps the complete 0x12 decoding paths - see
-// X64/Utils/Umbra/RESEARCH.md - so the tome is handed to the game unmodified.
 
 #include "optimizer/umbraComputationParams.hpp"
 #include "optimizer/umbraLocalComputation.hpp"
@@ -40,7 +27,6 @@ namespace
 {
 	using namespace ZoneTool::Umbra;
 
-	// the public Umbra::Vector3 is a bare float[3]
 	Umbra::Vector3 vec3(const float x, const float y, const float z)
 	{
 		Umbra::Vector3 v;
@@ -71,7 +57,6 @@ namespace
 
 		void log(Level level, const char* str) override
 		{
-			// the optimizer's default logger already echoes to stdout
 			static const char* names[] = { "DEBUG", "INFO", "WARNING", "ERROR" };
 			const auto* name = (level >= 0 && level < 4) ? names[level] : "?";
 			if (this->file_)
@@ -122,14 +107,11 @@ namespace
 		std::size_t occluder_count = 0;
 		std::size_t target_count = 0;
 		std::vector<Umbra::Vector3> seed_points;
-		// raw copies for the ray cast check
 		std::vector<std::vector<float>> model_vertices;
 		std::vector<std::vector<std::uint32_t>> model_indices;
 		std::vector<scene_object> objects;
 	};
 
-	// Builds the Umbra scene from the interchange file. Models are inserted as-is,
-	// objects reference them with an identity transform.
 	bool load_scene(const char* path, loaded_scene& out)
 	{
 		std::vector<unsigned char> data;
@@ -279,8 +261,6 @@ namespace
 		return true;
 	}
 
-	// Column-major world-to-clip for a 90 degree camera looking down `forward`
-	// with `up`, the way the runtime expects it (DEPTHRANGE_ZERO_TO_ONE).
 	Umbra::Matrix4x4 make_world_to_clip(const float* eye, const float* forward, const float* up,
 		const float near_z, const float far_z, const float fov_scale_x = 1.0f, const float fov_scale_y = 1.0f)
 	{
@@ -299,7 +279,6 @@ namespace
 			return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 		};
 
-		// view: rows are s, u, -f (right-handed look-at)
 		const float view[4][4] = {
 			{ s[0], s[1], s[2], -dot(s, eye) },
 			{ u[0], u[1], u[2], -dot(u, eye) },
@@ -307,7 +286,6 @@ namespace
 			{ 0.0f, 0.0f, 0.0f, 1.0f },
 		};
 
-		// perspective (1 / tan(fov/2) per axis; 1 = 90 degrees), depth 0..1
 		const float proj[4][4] = {
 			{ fov_scale_x, 0.0f, 0.0f, 0.0f },
 			{ 0.0f, fov_scale_y, 0.0f, 0.0f },
@@ -327,7 +305,6 @@ namespace
 			}
 		}
 
-		// Umbra::Matrix4x4::m[col][row] in MF_COLUMN_MAJOR
 		Umbra::Matrix4x4 out{};
 		for (int r = 0; r < 4; r++)
 		{
@@ -339,11 +316,6 @@ namespace
 		return out;
 	}
 
-	// Loads the tome back with the runtime and runs the same portal query the
-	// engine issues, from every seed point and from the view volume centre,
-	// looking along +-X, +-Y and +-Z. This is the generator's own runtime, not
-	// IW7's, so it validates the tome's internal consistency and gives a feel for
-	// how much it culls; it cannot prove IW7 will agree.
 	bool verify_tome(const std::vector<unsigned char>& tome_data, const loaded_scene& scene)
 	{
 		const auto* tome = Umbra::TomeLoader::loadFromBuffer(tome_data.data(), tome_data.size());
@@ -427,15 +399,6 @@ namespace
 		return errors == 0;
 	}
 
-	// ---- conservativeness check -------------------------------------------------------
-	//
-	// Umbra may only hide what the occluder set provably hides. This replays the
-	// engine's portal query from random cameras with the generator's own runtime
-	// and, for every target it reports hidden, casts rays from sample points on
-	// that target to the camera against every occluder triangle. A sample inside
-	// the frustum that reaches the camera unblocked is a false occlusion. It is
-	// brute force (fine for a dev map, slow for a real one - use --cameras) and it
-	// says nothing about IW7's reading of the tome, only about the tome.
 	struct ray_triangle
 	{
 		float a[3], b[3], c[3];
@@ -479,10 +442,10 @@ namespace
 
 		int camera_count = 200;
 		unsigned int seed = 1;
-		bool frustum_only = false; // control run: no occlusion, so any report is a camera setup bug
-		float clearance_limit = 32.0f; // cameras closer than this to an occluder are inside walls as far as the game is concerned
-		int jobs = 4; // r_umbraQueryParts default 4 x 1
-		float accurate_threshold = 256.0f; // r_umbraAccurateOcclusionThreshold default
+		bool frustum_only = false;
+		float clearance_limit = 32.0f;
+		int jobs = 4;
+		float accurate_threshold = 256.0f;
 
 		for (int i = 4; i < argc; i++)
 		{
@@ -532,7 +495,6 @@ namespace
 			return 4;
 		}
 
-		// tome object index -> scene object, through the user id
 		const auto object_count = tome->getObjectCount();
 		std::vector<int> tome_to_scene(object_count, -1);
 		{
@@ -574,7 +536,6 @@ namespace
 		}
 		std::printf("check: %zu occluder triangles, %d tome objects, %d cameras\n", occluders.size(), object_count, camera_count);
 
-		// sample cameras around the occluder geometry, not the (huge) view volume
 		Umbra::Vector3 mn = vec3(FLT_MAX, FLT_MAX, FLT_MAX), mx = vec3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
 		for (const auto& tri : occluders)
 		{
@@ -607,9 +568,6 @@ namespace
 		std::vector<std::uint32_t> job_mask(mask.size());
 		Umbra::Query query(tome);
 
-		// Distance to the nearest occluder triangle, negative when that triangle
-		// faces away (clockwise winding, so the front normal is -e1 x e2): a camera
-		// whose nearest wall shows it its back is inside solid geometry.
 		const auto clearance = [&](const float* p)
 		{
 			float best = FLT_MAX;
@@ -627,7 +585,7 @@ namespace
 				}
 				for (auto& k : n) k /= nl;
 				const auto dist = (p[0] - tri.a[0]) * n[0] + (p[1] - tri.a[1]) * n[1] + (p[2] - tri.a[2]) * n[2];
-				const bool behind = dist > 0.0f; // on the +e1xe2 side = the back of a clockwise face
+				const bool behind = dist > 0.0f;
 
 				const float q[3] = { p[0] - dist * n[0], p[1] - dist * n[1], p[2] - dist * n[2] };
 				bool inside = true;
@@ -678,8 +636,6 @@ namespace
 			const float eye[3] = { mn.v[0] + frand() * (mx.v[0] - mn.v[0]), mn.v[1] + frand() * (mx.v[1] - mn.v[1]),
 				mn.v[2] + frand() * (mx.v[2] - mn.v[2]) };
 			const auto camera_clearance = clearance(eye);
-			// six axis views plus six random ones, the latter with a 16:9 camera at a
-			// random 60..100 degree horizontal fov like the game's
 			for (int view = 0; view < 12; view++)
 			{
 				float dir[3];
@@ -691,7 +647,7 @@ namespace
 				else
 				{
 					const auto yaw = frand() * 6.2831853f;
-					const auto pitch = (frand() - 0.5f) * 3.0f; // +-86 degrees
+					const auto pitch = (frand() - 0.5f) * 3.0f;
 					dir[0] = std::cos(pitch) * std::cos(yaw);
 					dir[1] = std::cos(pitch) * std::sin(yaw);
 					dir[2] = std::sin(pitch);
@@ -705,9 +661,6 @@ namespace
 				const auto clip = make_world_to_clip(eye, dir, up, 1.0f, 100000.0f, fov_x, fov_y);
 				const Umbra::CameraTransform camera(clip, vec3(eye[0], eye[1], eye[2]));
 
-				// IW7 splits the frustum into r_umbraQueryParts (default 4x1) jobs. The
-				// SDK's VisibilityResult clears the output mask on every job, so each
-				// job gets its own mask here and the results are OR'ed.
 				std::fill(mask.begin(), mask.end(), 0u);
 				auto error = Umbra::Query::ERROR_OK;
 				if (frustum_only)
@@ -732,7 +685,7 @@ namespace
 				}
 				if (error != Umbra::Query::ERROR_OK)
 				{
-					continue; // outside scene etc.: the engine draws everything there
+					continue;
 				}
 				queries++;
 
@@ -750,7 +703,7 @@ namespace
 				{
 					if ((mask[i >> 5] >> (i & 31)) & 1)
 					{
-						continue; // visible: fine either way
+						continue;
 					}
 					const auto o = tome_to_scene[i];
 					if (o < 0)
@@ -799,7 +752,6 @@ namespace
 									continue;
 								}
 								float th;
-								// ignore the surface the sample sits on and the camera's immediate vicinity
 								if (ray_hits_triangle(p, d, tri, th) && th > 0.5f && th < len - 0.5f)
 								{
 									blocked = true;
@@ -810,8 +762,6 @@ namespace
 							{
 								leak = true;
 								std::memcpy(leak_point, p, sizeof(leak_point));
-								// which side of the triangle the camera is on: + means the front;
-								// IW world triangles wind clockwise (the floor's normal must point up)
 								const float n[3] = { (b[1] - a[1]) * (cc[2] - a[2]) - (b[2] - a[2]) * (cc[1] - a[1]),
 									(b[2] - a[2]) * (cc[0] - a[0]) - (b[0] - a[0]) * (cc[2] - a[2]),
 									(b[0] - a[0]) * (cc[1] - a[1]) - (b[1] - a[1]) * (cc[0] - a[0]) };
@@ -846,12 +796,6 @@ namespace
 		return serious_leaks ? 8 : 0;
 	}
 
-	// ---- single camera replay -----------------------------------------------------------
-	//
-	//   umbra-tomegen query <scene> <tome> x y z yaw pitch [--fov deg] [--jobs N] [--threshold D]
-	//
-	// Prints what the SDK runtime reports hidden from one camera (IW angles: yaw
-	// degrees about +z from +x, pitch degrees down), to compare with the game.
 	int query_mode(const int argc, char** argv)
 	{
 		if (argc < 9)
@@ -890,7 +834,6 @@ namespace
 			return 4;
 		}
 
-		// IW: pitch positive = looking down
 		const float dir[3] = { std::cos(pitch) * std::cos(yaw), std::cos(pitch) * std::sin(yaw), -std::sin(pitch) };
 		const float up[3] = { 0, 0, 1 };
 		const auto fov = fov_deg * 3.14159265f / 180.0f;
@@ -900,7 +843,6 @@ namespace
 
 		const auto object_count = tome->getObjectCount();
 		std::vector<std::uint32_t> mask((object_count + 31) / 32 + 1), job_mask(mask.size());
-		// one occlusion buffer per job, combined like the engine does (0x1405FAF40 -> 0x140E8FB60)
 		std::vector<Umbra::OcclusionBuffer> buffers(jobs);
 		Umbra::Query query(tome);
 		for (int job = 0; job < jobs; job++)
@@ -924,8 +866,6 @@ namespace
 		{
 			const auto& buffer = buffers[0];
 			std::printf("occlusion buffer %dx%d\n", buffer.getWidth(), buffer.getHeight());
-			// what the engine asks of it: scene entity boxes. The floor brush model of
-			// mp_test_h1 spans the slab; also probe some boxes around the camera.
 			const float boxes[][6] = {
 				{ -816, -816, -16, 816, 816, 0 },
 				{ eye[0] - 64, eye[1] - 64, eye[2] - 64, eye[0] + 64, eye[1] + 64, eye[2] + 64 },
@@ -1044,7 +984,6 @@ namespace
 			threads = 1;
 		}
 
-		// the optimizer spills tile data next to the output while it runs
 		std::string temp_path = tome_path;
 		const auto slash = temp_path.find_last_of("\\/");
 		temp_path = slash == std::string::npos ? "." : temp_path.substr(0, slash);
@@ -1058,11 +997,6 @@ namespace
 		local_params.tempPath = temp_path.c_str();
 		local_params.tempFilePrefix = "umbra-tomegen-";
 
-		// The optimizer deletes cell clusters smaller than this fraction of the
-		// largest one as "unreachable". A sealed room the player can only noclip
-		// into is exactly such a cluster, and a camera in a deleted region inherits
-		// a neighbouring cell's visibility (wrong lights, wrong culling). Keeping
-		// every cell can only add view regions, so keep them all.
 		Umbra::g_reachabilityAnalysisThreshold = 0.0f;
 
 		auto* computation = Umbra::LocalComputation::create(local_params);
@@ -1104,8 +1038,6 @@ namespace
 		return ok ? 0 : 7;
 	}
 
-	// Header layout shared by tome versions 0x12 (what we write) and 0x14 (what
-	// IW7 ships); the 0x14 fields after m_numFaces are read only when present.
 	struct tome_header
 	{
 		std::uint32_t version_magic;
@@ -1156,8 +1088,8 @@ namespace
 		std::uint32_t depthmap_faces;
 		std::uint32_t depthmap_palettes;
 		std::int32_t num_faces;
-		std::uint32_t tile_portal_expands; // 0x14: per tile expand; 0x12: pad
-		float bounds_min[3]; // 0x14 only
+		std::uint32_t tile_portal_expands;
+		float bounds_min[3];
 		float bounds_max[3];
 		float cluster_coord_scale;
 		std::int32_t pad;
@@ -1185,7 +1117,6 @@ namespace
 	{
 		tome_header header{};
 		std::memcpy(&header, data, std::min(sizeof(header), size));
-		// (a 0x12 tome is only 336 bytes; the 0x14 tail stays zero)
 		const auto version = header.version_magic & 0xFFFF;
 
 		std::printf("  version 0x%04X (magic 0x%08X) size %u (buffer %zu) crc 0x%08X flags 0x%X lodBase %g\n",
@@ -1208,7 +1139,6 @@ namespace
 			header.num_gates, header.num_gate_vertices, header.num_tomes, header.num_faces);
 		std::printf("  computation \"%.128s\"\n", header.computation_string);
 
-		// user ID type histogram
 		if (header.num_objects > 0 && header.user_ids && header.user_ids < size)
 		{
 			std::size_t type_counts[8]{};
@@ -1235,7 +1165,6 @@ namespace
 			}
 		}
 
-		// per tile summary
 		const auto node_count = header.tile_tree_node_count_map_width >> 5;
 		if (header.tiles && header.tiles + node_count * 4 <= size)
 		{
@@ -1289,8 +1218,6 @@ namespace
 			return 3;
 		}
 
-		// a bare tome starts with the magic; a gfxmap embeds one or more at
-		// arbitrary (unaligned) offsets
 		std::size_t found = 0;
 		for (std::size_t offset = 0; offset + sizeof(tome_header) <= data.size(); offset++)
 		{

@@ -2,17 +2,11 @@
 
 #include <cmath>
 
-// Engine-convention angle math, ported from the IW3 com_math functions of the same names (KisakCOD
-// universal/com_math.cpp). Angles are [pitch, yaw, roll] in degrees with positive pitch looking down;
-// an axis is the rows [forward, left, up]. Shared by the converters so every target agrees on the
-// convention - a textbook quaternion-to-Euler conversion gives [roll, pitch, yaw] with the opposite
-// pitch sign, which is how converted dynents once came out tipped over.
 namespace ZoneTool::math
 {
 	inline constexpr float deg_to_rad = 0.017453292f;
 	inline constexpr float rad_to_deg = 57.295776f;
 
-	// vectoangles: pitch and yaw in [0, 360), roll 0
 	inline void VectorToAngles(const float* vec, float* angles)
 	{
 		const float x = vec[0];
@@ -47,7 +41,6 @@ namespace ZoneTool::math
 		angles[2] = 0.0f;
 	}
 
-	// vectosignedpitch: pitch in [-90, 90]
 	inline float VectorToSignedPitch(const float* vec)
 	{
 		if (vec[0] == 0.0f && vec[1] == 0.0f)
@@ -62,7 +55,6 @@ namespace ZoneTool::math
 	{
 		VectorToAngles(axis[0], angles);
 
-		// undo yaw, then pitch, on the left vector; what is left of it is the roll
 		const float yaw = -angles[1] * deg_to_rad;
 		const float sin_yaw = std::sin(yaw);
 		const float cos_yaw = std::cos(yaw);
@@ -127,7 +119,6 @@ namespace ZoneTool::math
 		}
 	}
 
-	// AnglesToAxis: rows forward, left (= -right), up
 	inline void AnglesToAxis(const float* angles, float axis[3][3])
 	{
 		float right[3];
@@ -137,7 +128,6 @@ namespace ZoneTool::math
 		axis[1][2] = -right[2];
 	}
 
-	// UnitQuatToAxis: quat is x, y, z, w
 	inline void UnitQuatToAxis(const float* quat, float axis[3][3])
 	{
 		const float x = quat[0];

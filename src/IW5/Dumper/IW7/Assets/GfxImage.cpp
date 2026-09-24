@@ -9,9 +9,6 @@ namespace ZoneTool::IW5::IW7Dumper
 {
 	namespace
 	{
-		// Outlives the per-asset allocators the dumper uses, because the array is not assembled
-		// until the GfxWorld comes through - nine seconds later on mp_test_h1. A whole map's
-		// probes are under a megabyte, so they are simply copied in and kept.
 		allocator& probe_allocator()
 		{
 			static allocator mem;
@@ -22,7 +19,6 @@ namespace ZoneTool::IW5::IW7Dumper
 		std::vector<IW7::GfxImage*> lightmap_primaries;
 		std::vector<IW7::GfxImage*> lightmap_secondaries;
 
-		// The converted image, copied somewhere that outlives the caller's allocator.
 		IW7::GfxImage* keep(const std::string& name, IW7::GfxImage* image)
 		{
 			auto& mem = probe_allocator();
@@ -36,7 +32,6 @@ namespace ZoneTool::IW5::IW7Dumper
 			return copy;
 		}
 
-		// "<prefix><digits><suffix>" -> the digits, or -1.
 		int indexed_name(const std::string& name, const std::string& prefix, const std::string& suffix)
 		{
 			if (name.size() <= prefix.size() + suffix.size() ||
@@ -65,12 +60,6 @@ namespace ZoneTool::IW5::IW7Dumper
 			slots[index] = image;
 		}
 
-		// IW7 keeps a lightmap's three textures on one texel grid - measured on cp_zmb, mp_afghan,
-		// mp_breakneck, mp_frontend and mp_paris, where primary and secondunorm always match and
-		// the secondary is that grid with the height doubled for its two radiance pages. IW5 does
-		// not: on mp_test_h1 the primary arrives as 1024x1024 single-channel while the secondary
-		// is two 512x512 RGBA pages. The GfxWorld dumper reconciles them, which is why both are
-		// captured here rather than being written once and forgotten.
 		void capture_lightmap(const std::string& name, IW7::GfxImage* image)
 		{
 			if (!image || !image->pixelData || !image->dataLen1)
@@ -108,7 +97,7 @@ namespace ZoneTool::IW5::IW7Dumper
 			}
 
 			const auto index = std::strtoul(digits.data(), nullptr, 10);
-			if (index >= 1024) // a map with more probes than that is not a map we produced
+			if (index >= 1024)
 			{
 				return;
 			}
@@ -143,19 +132,6 @@ namespace ZoneTool::IW5::IW7Dumper
 		lightmap_secondaries.clear();
 	}
 
-	// Set ZONETOOL_FAST_DUMP=1 to skip re-converting ordinary textures. Image conversion is most
-	// of a dump's cost (BC7 and BC6H encoding, then writing every mip), and when only world or
-	// lighting code has changed those files are already sitting in the staging tree from the last
-	// run, byte-identical to what this would produce.
-	//
-	// Map images are never skipped. Names beginning "*light" or "*refle" are the lightmaps and
-	// reflection probes the GfxWorld dumper assembles its probe array and lightmap set from - they
-	// are captured as a side effect of being dumped here, so skipping them would silently empty
-	// those and leave the world asset referring to images nothing rebuilt.
-	//
-	// Materials deliberately have no equivalent switch: dumping a material is what registers its
-	// renamed name, and every xmodel and effect resolves its material references through that
-	// table. Skipping them would emit unrenamed references and produce a broken zone.
 	bool fast_dump_enabled()
 	{
 		static const auto enabled = []
@@ -191,17 +167,6 @@ namespace ZoneTool::IW5::IW7Dumper
 
 		if (!isMapImage)
 		{
-			// Where the pixels live depends on which game the zone came from, and only IW5 keeps
-			// model textures out of the zone:
-			//
-			//   IW3 / IW4  the data is resident in texture.loadDef. IW3::GenerateIW4Image copies
-			//              resourceSize bytes straight out of it, and by the time an IW3 zone
-			//              reaches here it has been reinterpret_cast to an IW5 GfxImage, loadDef
-			//              and all. There is no images\<name>.iwi for CoD4 to find, so reading one
-			//              always comes back empty.
-			//   IW5        model textures are streamed .iwi with no resident data at all.
-			//
-			// Prefer whatever is in the zone and only go to the filesystem when there is nothing.
 			auto* converted = IW7Converter::convert_resident(asset, allocator);
 			if (!converted)
 			{

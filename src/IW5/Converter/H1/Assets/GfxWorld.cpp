@@ -910,7 +910,6 @@ namespace ZoneTool::IW5
 
 			h1_asset->fogTypesAllowed = asset->fogTypesAllowed;
 
-			// h1 does not need umbra data.
 			h1_asset->umbraTomeSize = 0;
 			h1_asset->umbraTomeData = nullptr;
 			h1_asset->umbraTomePtr = nullptr;

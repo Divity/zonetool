@@ -15,12 +15,21 @@ namespace ZoneTool::IW5::IW7Dumper
 	{
 		allocator allocator;
 
-		// generate iw7 clipmap -- this builds the mapents too, since the clipmap points at
-		// them and the trigger volumes have to agree between the two
 		auto* iw7_asset = IW7Converter::convert(asset, allocator);
 
 		// dump iw7 clipmap
 		IW7::IClipMap::dump(iw7_asset);
+
+		for (const auto* ncs : {
+			"ncs_acl_level", "ncs_anm_level", "ncs_efx_level", "ncs_ges_level",
+			"ncs_hic_level", "ncs_hnt_level", "ncs_loc_level", "ncs_lui_level",
+			"ncs_mat_level", "ncs_mdl_level", "ncs_mic_level", "ncs_nps_level",
+			"ncs_rmb_level", "ncs_rmg_level", "ncs_shk_level", "ncs_sic_level",
+			"ncs_sut_level", "ncs_tag_level", "ncs_tgt_level", "ncs_veh_level",
+			"ncs_vfx_level", "ncs_vsn_level", "ncs_wep_level" })
+		{
+			zonetool::filesystem::csv_buffer_line("netconststrings", ncs);
+		}
 
 		auto* iw7_mapents = iw7_asset->mapEnts;
 		if (!iw7_mapents)
@@ -35,9 +44,6 @@ namespace ZoneTool::IW5::IW7Dumper
 		mapents2spawns::dump_spawns(filesystem::get_dump_path() + asset->name + ".ents.spawnList.json"s, 
 			iw7_mapents->entityString);
 
-		// Brush models point at a generated dummy PhysicsAsset; without it in the zone the
-		// runtime builds no body for them at all. They all share one asset, so dump each
-		// distinct one once.
 		std::vector<IW7::PhysicsAsset*> dumped;
 		const auto dump_physics = [&](IW7::PhysicsAsset* physics)
 		{
@@ -55,16 +61,11 @@ namespace ZoneTool::IW5::IW7Dumper
 			dump_physics(iw7_mapents->cmodels[i].physicsAsset);
 		}
 
-		// Triggers carry their own dummy when ZT_HAVOK_TRIGGER_SHAPES is on.
 		for (unsigned int i = 0; i < iw7_mapents->trigger.count; i++)
 		{
 			dump_physics(iw7_mapents->trigger.models[i].physicsAsset);
 		}
 
-		// dump dynent scriptables
-		// Generated destruct-dynent scriptables are appended after the authored runtime
-		// slots.  They still need a standalone scriptable asset on disk for x64-zt's
-		// MapEnts references to resolve during parsing.
 		for (unsigned int i = 0; i < iw7_mapents->scriptableMapEnts.totalInstanceCount; i++)
 		{
 			if (iw7_mapents->scriptableMapEnts.instances[i].contextHeader.context.def)

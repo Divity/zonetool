@@ -56,9 +56,6 @@ def parse(path):
     r = R(open(path, "rb").read())
     cw = r.array(SZ_COMWORLD)
     name = r.string()
-    # ComWorld: name@0 isInUse@8 useForwardPlus@12 bakeQuality@16 primaryLightCount@20
-    #           primaryLights@24 scriptablePrimaryLightCount@32 firstScriptablePrimaryLight@36
-    #           primaryLightEnvCount@40 primaryLightEnvs@48 ...
     light_count = struct.unpack_from("<I", cw, 20)[0]
     env_count = struct.unpack_from("<I", cw, 40)[0]
     first_scriptable = struct.unpack_from("<I", cw, 36)[0]
@@ -80,7 +77,6 @@ for path in (sys.argv[1:] or
     print("\n=== %s  (%s) ===" % (tag, name))
     print("primaryLightCount=%d  primaryLightEnvCount=%d  firstScriptablePrimaryLight=%d"
           % (nl, ne, fs))
-    # ComPrimaryLight: type@0 canUseShadowMap@1 needsDynamicShadows@2 isVolumetric@3 ...
     types = [lights[i * SZ_LIGHT] for i in range(nl)] if lights else []
     TYPE = {0: "NONE", 1: "DIR(sun)", 2: "SPOT", 3: "OMNI"}
     print("light types: " + ", ".join("%d:%s" % (i, TYPE.get(t, str(t)))

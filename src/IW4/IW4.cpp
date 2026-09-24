@@ -202,7 +202,11 @@ char**>(0x00799278)[type]);
 				if (csvFile)
 				{
 					auto xassettypes = reinterpret_cast<char**>(0x00799278);
-					zonetool::filesystem::csv_buffer_line(xassettypes[type], get_asset_name(type, header));
+					const auto csv_type = zonetool::csv_type_for_target(xassettypes[type]);
+					if (!csv_type.empty())
+					{
+						zonetool::filesystem::csv_buffer_line(csv_type, get_asset_name(type, header));
+					}
 				}
 			}
 
@@ -259,14 +263,9 @@ char**>(0x00799278)[type]);
 					// clear referenced assets array because we are done dumping
 					referencedAssets.clear();
 
-					// Visions are rewritten once, after every asset is on disk: the source game's file is
-					// only final once the rawfile dumper has written it.
 					::ZoneTool::IW5::IW7Dumper::convert_visions(fastfile);
 
 					// clear csv file static variable for next dumps
-					// A dumper may have written an asset out under a different name than the one the
-					// game knows it by - see csv_buffer_line - so the lines are resolved here, once
-					// every asset in the zone has been through its dumper.
 					for (const auto& line : zonetool::filesystem::csv_take_lines())
 					{
 						fprintf(csvFile, "%s\n", line.data());

@@ -20,8 +20,6 @@ MAPS = [
     ("mp_paris",     r"D:\Games\PC\IW7\dump\mp_paris\maps\mp\mp_paris.d3dbsp.gfxmap"),
     ("mp_afghan",    r"D:\Games\PC\IW7\dump\mp_afghan\maps\mp\mp_afghan.d3dbsp.gfxmap"),
     ("mp_breakneck", r"D:\Games\PC\IW7\dump\mp_breakneck\maps\mp\mp_breakneck.d3dbsp.gfxmap"),
-    # our own converter output, so the run is a stock-vs-ours comparison rather than
-    # a re-measurement of the reference maps
     ("OURS",         r"D:\Games\PC\IW7\zonetool\mp_test_h1\maps\mp\mp_test_h1.d3dbsp.gfxmap"),
 ]
 AX = "xyz"
@@ -38,7 +36,6 @@ def epsilon_report(tag, pos):
     frac = np.round(pos - np.floor(pos), 5)
     uniq = sorted(set(frac.ravel().tolist()))
     print("  epsilons present in probePositions: %s" % uniq)
-    # for each epsilon group, what is the local spacing?
     for e in uniq:
         m = np.isclose(frac[:, 0], e)
         if m.sum() < 50:
@@ -59,7 +56,6 @@ def analyse(tag, path):
     print("\n=== %s   %d probes" % (tag, len(a)))
     epsilon_report(tag, pos)
 
-    # strip the epsilon, quantise to whole units, build a lookup
     q = np.rint(pos).astype(np.int64)
     base = q.min(axis=0)
     q = q - base
@@ -78,7 +74,6 @@ def analyse(tag, path):
             idx[i] = j
         return idx
 
-    # try both dominant spacings so adaptive levels are covered
     for spacing in (32, 64):
         gr, ok = [], []
         for ax in range(3):
@@ -103,7 +98,6 @@ def analyse(tag, path):
             print("        %3d | %8.3f %8.3f %8.3f   -> %s%s"
                   % (k, row[0], row[1], row[2], ("-" if row[b] < 0 else "+"), AX[b]))
 
-        # second differences
         def second(ax1, ax2):
             if ax1 == ax2:
                 sp = [0, 0, 0]; sm = [0, 0, 0]

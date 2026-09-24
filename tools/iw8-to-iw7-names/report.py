@@ -9,7 +9,6 @@ OUTDIR = sys.argv[1]
 IW7_JSONL = sys.argv[2]
 m = json.load(open(os.path.join(OUTDIR, "matches.json"), encoding="utf-8"))
 
-# every iw7 function, so the unmatched set can be reported honestly
 all7 = {}
 for line in open(IW7_JSONL, encoding="utf-8"):
     r = json.loads(line)

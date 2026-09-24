@@ -323,6 +323,8 @@ namespace ZoneTool::IW7
 			return;
 		}
 
+		zonetool::filesystem::csv_buffer_line("scriptable", asset->name);
+
 		dump.dump_single(asset);
 		dump.dump_string(asset->name);
 

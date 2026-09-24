@@ -6,6 +6,13 @@ namespace ZoneTool
 	{
 		std::int32_t FFCompression::ff_version = 1;
 
+		std::unordered_set<db_z_stream_s*> FFCompression::zstd_streams;
+
+		bool FFCompression::stream_is_zstd(db_z_stream_s* strm)
+		{
+			return zstd_streams.contains(strm);
+		}
+
 		std::int32_t FFCompression::z_inflateInit(const char* version, db_z_stream_s* strm, int stream_size)
 		{
 			// Allocate zstd context
@@ -15,6 +22,8 @@ namespace ZoneTool
 			// Create pointers needed for decompression
 			strm->state->DCtx = ZSTD_createDCtx();
 			strm->state->DStream = ZSTD_createDStream();
+
+			zstd_streams.insert(strm);
 
 			// return ZLIB ok state
 			return Z_OK;
@@ -88,8 +97,17 @@ namespace ZoneTool
 		{
 			__asm
 			{
-				cmp ff_version, 2000;
-				jl jmp_back;
+				push ecx;
+				push edx;
+				push eax;
+				push eax;
+				call FFCompression::stream_is_zstd;
+				add esp, 4;
+				test al, al;
+				pop eax;
+				pop edx;
+				pop ecx;
+				jz jmp_back;
 
 				// use zstd
 				push eax;
@@ -111,10 +129,16 @@ namespace ZoneTool
 
 		std::int32_t FFCompression::z_inflateEnd(db_z_stream_s* strm)
 		{
+			zstd_streams.erase(strm);
+
 			// free decompression stream
-			ZSTD_freeDCtx(strm->state->DCtx);
-			ZSTD_freeDStream(strm->state->DStream);
-			free(strm->state);
+			if (strm->state)
+			{
+				ZSTD_freeDCtx(strm->state->DCtx);
+				ZSTD_freeDStream(strm->state->DStream);
+				free(strm->state);
+				strm->state = nullptr;
+			}
 
 			// return ZLIB ok state
 			return Z_OK;
@@ -124,8 +148,17 @@ namespace ZoneTool
 		{
 			__asm
 			{
-				cmp ff_version, 2000;
-				jl jmp_back;
+				push ecx;
+				push edx;
+				push eax;
+				push eax;
+				call FFCompression::stream_is_zstd;
+				add esp, 4;
+				test al, al;
+				pop eax;
+				pop edx;
+				pop ecx;
+				jz jmp_back;
 
 				// use zstd
 				push eax;

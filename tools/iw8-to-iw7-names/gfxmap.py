@@ -13,7 +13,6 @@ import struct, sys, os, json
 T_STRING, T_ASSET, T_ARRAY, T_OFFSET, T_RAW = 6, 7, 8, 9, 10
 SZ_GFXWORLD = 4520
 
-# GfxWorld field offsets (IDA type library)
 O = {
     "planeCount": 20, "nodeCount": 24, "surfaceCount": 28, "skyCount": 32,
     "primaryLightCount": 52, "cellCount": 120,
@@ -115,7 +114,6 @@ def parse(path, stop_after="smodelDrawInsts"):
 
     skies = r.array(32, "skies")
     for i in range(c("skyCount")):
-        # GfxSky: skySurfCount@0 (int), skyStartSurfs@8, skyImage, ...
         n = struct.unpack_from("<i", skies, i * 32)[0] if skies else 0
         r.array(4, "skyStartSurfs"); r.asset("skyImage")
 
@@ -185,7 +183,7 @@ def parse(path, stop_after="smodelDrawInsts"):
     lvf = r.array(48, "lightViewFrustums")
     if lvf:
         for i in range(c("primaryLightCount")):
-            r.array(16, "lvf.planes")     # vec4_t, not cplane_s
+            r.array(16, "lvf.planes")
             r.array(2, "lvf.indices")
             r.array(12, "lvf.vertices")
 
@@ -217,7 +215,7 @@ def parse(path, stop_after="smodelDrawInsts"):
     sg = r.array(24, "shadowGeomOptimized")
     if sg:
         for i in range(c("primaryLightCount")):
-            r.array(4, "sg.sortedSurfIndex")   # unsigned int*, not u16
+            r.array(4, "sg.sortedSurfIndex")
             r.array(2, "sg.smodelIndex")
     lr = r.array(16, "lightRegion")
     for i in range(c("primaryLightCount")):

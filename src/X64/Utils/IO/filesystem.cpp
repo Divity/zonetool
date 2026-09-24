@@ -296,8 +296,6 @@ namespace zonetool
 
 			for (const auto& [type, name] : csv_lines)
 			{
-				// A referenced asset is spelled ",<name>" in the csv, and its dumper only ever
-				// sees the bare name, so look the rename up without the marker and put it back.
 				const auto referenced = !name.empty() && name.front() == ',';
 				const auto bare = referenced ? name.substr(1) : name;
 

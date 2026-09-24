@@ -1,8 +1,5 @@
 UmbraTomeGen = {}
 
--- x64 console tool that runs the Umbra 3 optimizer for the IW7 converter. ZoneTool
--- spawns it (see X64/Utils/Umbra/UmbraTome.cpp) rather than linking the SDK: the
--- converter is a 32-bit DLL inside the source game and cannot host it.
 function UmbraTomeGen:project()
     local folder = ProjectFolder();
 
@@ -14,7 +11,6 @@ function UmbraTomeGen:project()
         removebuildoptions { "/std:c++latest" }
         cppdialect "C++17"
 
-        -- matches umbra3: optimized, release CRT, in every configuration
         optimize "Speed"
         runtime "Release"
         removedefines { "_DEBUG", "DEBUG" }

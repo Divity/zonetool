@@ -26,8 +26,8 @@ IW8_PATH, IW7_PATH, OUTDIR = sys.argv[1], sys.argv[2], sys.argv[3]
 os.makedirs(OUTDIR, exist_ok=True)
 
 AUTO_RE = re.compile(r"^(sub_|nullsub_|j_sub_|unknown_libname_|loc_|SEH_|j_nullsub_)")
-MAX_POSTING = 40      # a string/constant referenced by more functions than this is noise
-MAX_CANDS = 32        # candidate iw8 functions kept per iw7 function
+MAX_POSTING = 40
+MAX_CANDS = 32
 FANOUT_CAP = 60
 
 
@@ -54,7 +54,6 @@ print("loading exports ...")
 IW8 = load(IW8_PATH, "iw8")
 IW7 = load(IW7_PATH, "iw7")
 
-# ---------------------------------------------------------------- indexes
 def posting(db, key):
     idx = defaultdict(list)
     for ea, r in db.items():
@@ -77,7 +76,6 @@ for ea, r in IW7.items():
         if c in IW7:
             callers7[c].add(ea)
 
-# strings/constants common enough to be shared by unrelated functions carry no signal
 STOP_S = {s for s, e in s8.items() if len(e) > MAX_POSTING}
 STOP_S |= {s for s, e in s7.items() if len(e) > MAX_POSTING}
 
@@ -86,7 +84,6 @@ def strset(r):
     return r["strs"] - STOP_S
 
 
-# ---------------------------------------------------------------- similarity
 def hist_cos(a, b):
     if not a or not b:
         return 0.0
@@ -123,9 +120,8 @@ def struct_sim(ea8, ea7):
     return v
 
 
-# ---------------------------------------------------------------- candidate generation
 print("building candidates ...")
-cand = defaultdict(Counter)      # ea7 -> Counter(ea8 -> string-share count)
+cand = defaultdict(Counter)
 
 
 def add_from_posting(p8, p7, weight):
@@ -146,7 +142,6 @@ add_from_posting({k: v for k, v in s8.items() if k not in STOP_S},
 add_from_posting({k: v for k, v in c8.items() if k >= 0x10000},
                  {k: v for k, v in c7.items() if k >= 0x10000}, 1)
 
-# exact instruction-sequence hashes, unique on both sides
 h8, h7 = defaultdict(list), defaultdict(list)
 for ea, r in IW8.items():
     if r["ni"] >= 25:
@@ -162,12 +157,10 @@ for h, eas8 in h8.items():
         cand[eas7[0]][eas8[0]] += 3
 print("  %d candidate iw7 functions, %d unique exact-hash pairs" % (len(cand), len(exact_pairs)))
 
-# ---------------------------------------------------------------- iterative scoring
-MATCHED = {}        # ea7 -> ea8, accepted at high/medium
-GLOBALS = {}        # iw7 global -> iw8 global
-best = {}           # ea7 -> result dict
+MATCHED = {}
+GLOBALS = {}
+best = {}
 
-# an iw7 function whose symbol we already know: used only to measure, never to decide
 GROUND = {ea: r["name"] for ea, r in IW7.items() if is_named(r)}
 
 
@@ -208,12 +201,10 @@ def score_pair(ea7, ea8):
     ev = []
     conf = None
 
-    # --- tier 1: an identical instruction sequence, unique on both sides (99.3% measured)
     if exact:
         conf = "high"
         ev.append("identical %d-instruction sequence, unique in both binaries" % r7["ni"])
 
-    # --- tier 2: several uniquely shared literals
     if shared_s >= 3 and jac_s >= 0.5:
         conf = conf or "high"
         ev.append("%d shared string literals (jaccard %.2f)" % (shared_s, jac_s))
@@ -223,8 +214,6 @@ def score_pair(ea7, ea8):
     elif shared_s == 1:
         ev.append("1 shared string literal")
 
-    # --- tier 3: neighbourhood set agreement. Requires the *mapped* callee set to line up,
-    # not merely to overlap - overlap alone measured 25% precise.
     if ci >= 3 and cj >= 0.75:
         conf = "high" if conf != "high" else conf
         ev.append("callee set agrees: %d/%d mapped callees (jaccard %.2f)" % (ci, len(m7_callees), cj))
@@ -257,8 +246,6 @@ def score_pair(ea7, ea8):
         return None
     ev.append("struct_sim=%.2f" % sim)
 
-    # structural agreement is a gate, not evidence on its own: a pair that disagrees
-    # structurally cannot be high no matter what else lines up
     if conf == "high" and sim < 0.55 and not exact:
         conf = "medium"
     if conf is None:
@@ -274,12 +261,6 @@ def score_pair(ea7, ea8):
 
 CODOMAIN = set()
 
-# ---------------------------------------------------------------- symbol anchors
-# IW7 already carries 8,386 symbols. Where one of those names picks out exactly one IW8
-# function, the pair is ground truth rather than a prediction: seed the matching with it so
-# the mapped callee/caller sets have something to be measured against from round 0. These
-# pairs are deliberately kept out of `best`, so they never appear as results and never
-# inflate the precision figures printed at the end.
 by_name8 = defaultdict(list)
 for _ea, _r in IW8.items():
     if is_named(_r):
@@ -321,7 +302,6 @@ def run_round(rnd):
         top = results[0]
         runner = results[1]["score"] if len(results) > 1 else 0.0
         margin = top["score"] - runner
-        # an ambiguous winner is never confident, however good its evidence looks
         if margin < 0.5 and top["conf"] == "high":
             top["conf"] = "medium"
             top["ev"].append("demoted: runner-up within %.2f" % margin)
@@ -376,12 +356,12 @@ def expand_candidates():
             ctr = cand[t7]
             for t8 in n8:
                 if t8 in IW8:
-                    ctr[t8] += 0  # candidate only; the score decides
+                    ctr[t8] += 0
                     added += 1
     return added
 
 
-expand_candidates()   # pull in the anchors' neighbourhoods before round 0
+expand_candidates()
 
 for rnd in range(8):
     g = propagate_globals()
@@ -392,7 +372,6 @@ for rnd in range(8):
     if a == 0 and g == 0:
         break
 
-# ---------------------------------------------------------------- output + calibration
 res = []
 for ea7, b in best.items():
     r7 = IW7[ea7]

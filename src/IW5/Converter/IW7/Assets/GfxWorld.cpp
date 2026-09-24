@@ -21,29 +21,12 @@ namespace ZoneTool::IW5
 {
 	namespace IW7Converter
 	{
-		// ---- primary light proxy hulls ------------------------------------------------------
 		//
-		// IW7 uses GfxWorld::frustumLights for exactly two things: R_IsCameraInsideLightMeshVolume
-		// walks the vertices to get the light's view-space z extent, which is what places the light
-		// in the z-binned frustum grid, and an optional per-face camera test behind
-		// r_frustumLightProxyUseMeshCheck. Both only need a convex volume that *contains* the light,
-		// so we circumscribe it rather than reproduce IW7's own tessellation - too large costs a few
-		// extra bins, too small loses the light. A light with vertexCount 0 keeps the inverted range
-		// (FLT_MAX, 0) that function starts from and drops out of the grid entirely.
 		//
-		// Shipped IW7 proxies give the conventions: vertex 0 is the light origin, the hull extends
-		// along -dir (dir points toward the light), and only SPOT/OMNI carry one.
 		namespace
 		{
-			// Light grid sample points emitted per static model. IW7 gives every smodel a slice of
-			// gfxWorld.lightGrid.probeData.gpuVisibleProbePositions and the engine resolves the
-			// tetrahedral volume at each of those positions; unk2 = 0 is the shipped layout for a
-			// two-point slice and covers 2444 of mp_dome_dusk's 3157 models.
 			constexpr unsigned int smodel_probe_samples = 2;
 
-			// Whether a light grid cell is lit by the sun rather than a local/indoor light. Same rule
-			// as the H1 converter's is_sun_light: IW3-sourced maps put the sun in the low index range
-			// [1..lastSun], everything else uses the high range.
 			bool is_sun_light(const unsigned int pli, const unsigned int last_sun)
 			{
 				const bool low_range_is_sun = ZoneTool::get_linker_mode() == ZoneTool::linker_mode::iw3;
@@ -60,41 +43,20 @@ namespace ZoneTool::IW5
 			constexpr unsigned char light_type_spot = 2;
 			constexpr unsigned char light_type_omni = 3;
 
-			// Sun visibility bake (GfxProbeData coeffs[27]). Shipped maps carry a continuous
-			// occlusion term - 10611 distinct values in mp_dome_dusk, ~30% of probes at exactly 0
-			// and 5-11% at exactly 1 - so a classifier over primaryLightIndex can never reproduce
-			// it. There is no ray casting here, but the legacy light grid is itself an occupancy
-			// volume: cells inside solid geometry are simply never populated. Marching toward the
-			// sun through that occupancy gives real, spatially varying shadowing from world geometry.
-			constexpr unsigned int sun_trace_rays = 8;      // >1 so the terminator is soft
-			constexpr float sun_trace_cone = 0.09f;         // ~5 degrees of jitter around the sun
+			constexpr unsigned int sun_trace_rays = 8;
+			constexpr float sun_trace_cone = 0.09f;
 			constexpr unsigned int sun_trace_max_steps = 384;
 
-			// 80 degrees
 			constexpr float light_proxy_wide_spot_cutoff = 1.3962634f;
 
-			// A minimal circumscribing hull only needs ~1.09 * radius, but shipped hulls are far more
-			// generous - measured over mp_dome_dusk, the 20-vertex unshadowed spots reach 1.26 R on
-			// average (max 1.355) and the omni 1.369 R; mp_breakneck's omni is 1.415 R. This is a
-			// *culling* volume feeding the clustered light bins, so a tight hull is the wrong trade:
-			// clusters just outside it never receive the light and it cuts off on cluster boundaries,
-			// which reads in game as the light stopping abruptly with blocky edges. Match the shipped
-			// margin instead of the geometric minimum.
 			constexpr float light_proxy_safety_margin = 1.20f;
 
-			// Blunt fallback: ignore the cone entirely and wrap every light in a generous sphere.
-			// The proxy is only a culling volume - the shader still applies the real cone falloff -
-			// so an oversized hull cannot make a light spill, it can only stop it being culled out
-			// of clusters near the edge of its reach. Use this to answer "is the proxy the thing
-			// limiting where this light shows up"; if a big sphere fixes coverage, it is. The cost
-			// is that more clusters process the light, and IW7 caps a cluster at
-			// FRUSTUM_GRID_MAX_LIGHTS (256), so a dense map wants the fitted cone instead.
 			constexpr bool light_proxy_use_sphere = false;
 			constexpr float light_proxy_sphere_scale = 2.0f;
 
 			struct proxy_mesh
 			{
-				std::vector<float> vertices; // xyz triplets
+				std::vector<float> vertices;
 				std::vector<unsigned short> indices;
 
 				unsigned short add_vertex(const float* p)
@@ -105,14 +67,6 @@ namespace ZoneTool::IW5
 					return static_cast<unsigned short>((vertices.size() / 3) - 1);
 				}
 
-				// Emitted with the winding REVERSED, so the finished hull has inward-facing normals.
-				// Every shipped proxy is wound that way - measured over mp_dome_dusk, all five hulls
-				// checked (both the 20-vertex and 44-vertex kinds) have negative signed volume and
-				// 0% of triangles facing outward, where ours were 100% outward. These meshes are
-				// rasterised as light volumes rather than only used for culling, so the winding
-				// decides which faces survive backface culling: inverted, the light renders over a
-				// sliver of its real area, and enlarging the hull until the camera sits inside it
-				// removes the light entirely.
 				void add_triangle(const unsigned short a, const unsigned short b, const unsigned short c)
 				{
 					indices.push_back(a);
@@ -132,7 +86,6 @@ namespace ZoneTool::IW5
 				}
 			}
 
-			// any orthonormal pair perpendicular to axis
 			void build_proxy_basis(const float axis[3], float u[3], float v[3])
 			{
 				float helper[3] = { 0.0f, 0.0f, 1.0f };
@@ -153,20 +106,11 @@ namespace ZoneTool::IW5
 				normalize_proxy_axis(v);
 			}
 
-			// every vertex sits on a sphere of radius `dist`, so a face of the hull sits at
-			// dist * cos(half the angular gap between its vertices). Scaling the sample distance by
-			// 1 / cos(gap) keeps every face outside the true light volume.
 			float proxy_circumscribe_scale(const float polar_gap)
 			{
 				return 1.0f / (std::cos(light_proxy_pi / light_proxy_segments) * std::cos(polar_gap * 0.5f));
 			}
 
-			// The distance scale above only covers the spherical cap. It does nothing for the cone's
-			// side faces, because pushing the ring further from the apex widens the hull without
-			// widening its aperture - a rim point half way between two ring vertices still ends up
-			// outside by 1 / cos(pi / segments). Widening the cone angle instead is what makes the
-			// pyramid circumscribe the cone: a face at `expanded` has half-angle `half_angle` at its
-			// mid-azimuth. Verified against the rim circle, which is the worst case.
 			float expand_spot_cone(const float half_angle)
 			{
 				return std::atan(std::tan(half_angle) / std::cos(light_proxy_pi / light_proxy_segments));
@@ -223,8 +167,6 @@ namespace ZoneTool::IW5
 				}
 			}
 
-			// apex at the light origin, a tip on the axis and light_proxy_spot_rings rings out to the
-			// outer cone angle - the same apex + axial + rings topology the shipped hulls use.
 			void build_spot_proxy(proxy_mesh& mesh, const float origin[3], const float axis[3],
 				const float half_angle, const float range)
 			{
@@ -300,8 +242,6 @@ namespace ZoneTool::IW5
 
 		unsigned int first_reflection_probe(unsigned int reflection_probe_count)
 		{
-			// Only when there is something left after dropping it: a world carrying nothing but
-			// the sentinel keeps it, since IW7 still wants an array with at least one element.
 			return reflection_probe_count > 1 ? 1 : 0;
 		}
 
@@ -391,8 +331,6 @@ namespace ZoneTool::IW5
 			hr = DirectX::SaveToDDSFile(compressed.GetImages(), compressed.GetImageCount(), compressed.GetMetadata(), DirectX::DDS_FLAGS_NONE, wpath.data());
 			if (FAILED(hr)) return nullptr;*/
 
-			// Only the name: the pixels are assembled by the dumper, which has the converted
-			// probes to hand. See GenerateReflectionProbeArray.
 			auto* image = allocator.allocate<IW7::GfxImage>();
 			image->name = allocator.duplicate_string(image_name);
 			return image;
@@ -442,14 +380,7 @@ namespace ZoneTool::IW5
 			new_asset->sortKeyEmissiveBegin = 35;
 			new_asset->sortKeyEmissiveEnd = 40;
 
-			// Every shipped IW7 map has cellCount == 1 and leaves visibility to Umbra. With more
-			// cells the sun shadow pass (sm_strictCull) only draws casters from the visible cells
-			// plus cellCasterBits, which the game rebuilds at load by a portal walk along the sun
-			// direction - from a sealed room that finds nothing and the sun leaks through its
-			// walls. Collapse the world into one cell like stock.
 			//
-			// BSP node value v: 0 solid, v <= cellCount leaf for cell v-1, else plane
-			// v-(cellCount+1); front child at node+2, back child at node+node[1] (ushorts).
 			const auto source_cell_count = asset->dpvsPlanes.cellCount;
 			const auto merge_cells = source_cell_count > 1;
 
@@ -542,10 +473,6 @@ namespace ZoneTool::IW5
 
 			assert(asset->draw.reflectionProbeCount);
 
-			// Drop IW5's invalid-probe sentinel - see first_reflection_probe. Nothing needs
-			// re-indexing to follow it: every reflectionProbeIndex this converter writes is
-			// already 0 (static models are forced to 0 below, world surfaceMaterials are
-			// memset), so removing slot 0 repoints them all at the first real probe.
 			const auto firstProbe = first_reflection_probe(asset->draw.reflectionProbeCount);
 			const auto realProbeCount = asset->draw.reflectionProbeCount - firstProbe;
 
@@ -571,41 +498,18 @@ namespace ZoneTool::IW5
 				constexpr float kFallbackVolumeHalfExtent = 262144.0f; // "infinite" bounding volume
 				constexpr float kFallbackFeather = 8.0f;
 
-				// A reconstructed region is the union of the bounds of everything IW5 assigned to
-				// the probe; push it out a little so a surface sitting exactly on the boundary is
-				// inside the volume rather than halfway through its feather.
 				constexpr float kProbeVolumeMargin = 16.0f;
 				constexpr float kProbeVolumeFeather = 32.0f;
 
-				// A probe nothing references claims the space out to halfway to its nearest
-				// neighbour, clamped so one stray probe cannot blanket the map.
 				constexpr float kOrphanProbeMinHalfSize = 64.0f;
 				constexpr float kOrphanProbeMaxHalfSize = 2048.0f;
 
 				const unsigned int probeCount = realProbeCount;
-				const unsigned int totalInstanceCount = probeCount + 1; // +1 for the world fallback
+				const unsigned int totalInstanceCount = probeCount + 1;
 
-				// ---- reconstruct each probe's volume from IW5's own assignment ---------------
 				//
-				// IW7 does not read the baked per-object probe index the way IW5 does - stock maps
-				// set GfxStaticModelDrawInst::reflectionProbeIndex to 0 on every model while
-				// shipping dozens of probes (see the note at that assignment below). Selection
-				// happens at runtime out of reflectionProbeInstances[]: each instance carries an
-				// OBB, and the shaded point takes the highest-priority volume containing it,
-				// cross-faded over `feather`.
 				//
-				// That makes the OBB the only thing that selects a probe, and a zeroed instance
-				// has halfSize 0 - a box that contains no point in the universe. Emitting one real
-				// volume and leaving the rest degenerate, which is what this block used to do,
-				// means every pixel in the map falls through to the single infinite fallback. The
-				// probe array image, origins and image indices were all correct; nothing could
-				// reach them.
 				//
-				// IW5 ships no volumes to convert, but it does ship the assignment the IW3/IW5
-				// compiler baked with real visibility: every world surface and every static model
-				// names the probe that served it. The union of the bounds of everything assigned
-				// to probe k is the region that probe covered, walls already accounted for - the
-				// same trick light_boxes uses for primary lights further down.
 				struct probe_region
 				{
 					unsigned int refs = 0;
@@ -646,8 +550,6 @@ namespace ZoneTool::IW5
 					}
 				}
 
-				// Distance to the nearest other kept probe. Half of it is the extent an
-				// unreferenced probe can claim without swallowing its neighbour.
 				const auto nearest_probe_distance = [&](const unsigned int src_index)
 				{
 					float best = FLT_MAX;
@@ -671,15 +573,11 @@ namespace ZoneTool::IW5
 				auto* instances = allocator.allocate<IW7::GfxReflectionProbeInstance>(totalInstanceCount);
 				new_asset->draw.reflectionProbeData.reflectionProbeInstances = instances;
 
-				// One slot per instance. Probe 0 owns two - its own and the world fallback - so the
-				// fallback instance still belongs to a GfxReflectionProbe; every other probe owns
-				// one. 2 + (probeCount - 1) == totalInstanceCount, so the slices stay contiguous.
 				auto* globalProbeInstanceIndices = allocator.allocate<unsigned int>(totalInstanceCount);
 
 				unsigned int reconstructed_volumes = 0;
 				unsigned int spacing_volumes = 0;
 
-				// 2. Build pass - one instance per source probe
 				for (unsigned int i = 0; i < probeCount; i++)
 				{
 					const auto srcIndex = firstProbe + i;
@@ -697,7 +595,7 @@ namespace ZoneTool::IW5
 						dstProbe.probeInstanceCount = 2;
 						dstProbe.probeInstances = &globalProbeInstanceIndices[0];
 						dstProbe.probeInstances[0] = 0;
-						dstProbe.probeInstances[1] = probeCount; // the world fallback
+						dstProbe.probeInstances[1] = probeCount;
 					}
 					else
 					{
@@ -744,23 +642,14 @@ namespace ZoneTool::IW5
 
 					memcpy(inst.volumeObb.halfSize, half, sizeof(half));
 
-					// Tighter volume wins where two overlap, which is what lets a small interior
-					// probe beat the large exterior one it sits inside. Sum of half extents rather
-					// than volume: monotonic in size, and it cannot overflow on a map-sized box.
 					inst.priority = -(half[0] + half[1] + half[2]);
 
-					// Feather has to stay well inside the half extent or the volume is all
-					// transition and never reaches full strength anywhere.
 					for (int k = 0; k < 3; k++)
 					{
 						inst.feather[k] = std::min(kProbeVolumeFeather, half[k] * 0.25f);
 					}
 				}
 
-				// 3. The world fallback, so a point no reconstructed volume covers still resolves
-				// to a probe rather than to nothing. Probe 0 used to do this double duty, which
-				// cost the map its only real volume: probe 0's own region was overwritten with the
-				// infinite box.
 				{
 					auto& inst = instances[probeCount];
 					const auto* origin = new_asset->draw.reflectionProbeData.reflectionProbes[0].origin;
@@ -856,8 +745,6 @@ namespace ZoneTool::IW5
 			new_asset->draw.transientZones[0]->vertexLayerDataSize = asset->draw.vertexLayerDataSize;
 			new_asset->draw.transientZones[0]->vld.data = asset->draw.vld.data;
 
-			// childrenOffset is relative to the node and children are consecutive, so it only
-			// needs rescaling for the IW7 node size while the nodes keep their relative order.
 			auto convert_aabb_node = [](IW7::GfxAabbTree* dst, const GfxAabbTree* src, int children_index_delta)
 			{
 				memcpy(&dst->bounds, &src->bounds, sizeof(float[2][3]));
@@ -875,10 +762,6 @@ namespace ZoneTool::IW5
 			new_asset->draw.transientZones[0]->aabbTrees = allocator.allocate<IW7::GfxCellTree>(new_asset->dpvsPlanes.cellCount);
 			if (merge_cells)
 			{
-				// New root with the old per-cell roots as its children: the roots move to slots
-				// 1..N so they are consecutive, the remaining nodes follow in their original order.
-				// A node fully inside the view is marked wholesale from its own surface range and
-				// smodel list, so the root carries the union of everything below it.
 				std::vector<int> cell_roots;
 				int node_count = 1;
 				for (int i = 0; i < source_cell_count; i++)
@@ -968,17 +851,7 @@ namespace ZoneTool::IW5
 			new_asset->draw.indexCount = asset->draw.indexCount;
 			new_asset->draw.indices = asset->draw.indices;
 
-			// Where each primary light is actually allowed to land, straight out of the source
-			// bake. Every legacy grid cell names the one primary light that lights models in
-			// it, and the IW3 compiler computed that with real visibility - so the union of a
-			// light's cells is its true reach, walls already accounted for, at no cost to us.
-			// Measured on mp_test_h1: the omni's box is (256 -288 64)..(480 -128 192) where an
-			// unclipped sphere of its radius would span (232 -424 -40)..(552 -104 280), and the
-			// spot through the wall falls outside the tight box on two axes.
 			//
-			// Indices are the ComWorld primaryLights indices - confirmed by index 1 being the
-			// sun and covering the whole map while 2 and 3 sit on the spot's and omni's own
-			// origins.
 			struct light_cell_box
 			{
 				unsigned int cells = 0;
@@ -994,7 +867,6 @@ namespace ZoneTool::IW5
 
 				constexpr int unk_values[] = { 0, 0, 5, 5, 6, 32, 32, 64, 0 };
 				memcpy(new_asset->lightGrid.unk, unk_values, sizeof(unk_values));
-				// every authentic IW7 map ships these, probe-based ones included
 				new_asset->lightGrid.tableVersion = 1;
 				new_asset->lightGrid.paletteVersion = 1;
 				new_asset->lightGrid.rangeExponent8BitsEncoding = 0;
@@ -1002,10 +874,6 @@ namespace ZoneTool::IW5
 				new_asset->lightGrid.rangeExponent16BitsEncoding = 23;
 				new_asset->lightGrid.stageCount = 0;
 				new_asset->lightGrid.stageLightingContrastGain = 0;
-				// IW7's own compiler never emits a real octree light grid - every authentic map
-				// (mp_paris, mp_afghan, mp_breakneck, cp_zmb, mp_dome_dusk, mp_frontend) ships this
-				// exact 3-entry palette and 2-node tree stub alongside a full probe volume. Emit it
-				// verbatim rather than zeros, so anything that expects a light grid to exist finds one.
 				static const int stub_palette_addresses[3] = { 0, 30, 86 };
 				static const unsigned char stub_palette_bitstream[116] = {
 					0xE7,0x1C,0x00,0xF8,0x08,0x80,0x80,0x80,0x80,0x80,0xF1,0x00,0x08,0x80,0xF8,0x80,
@@ -1027,17 +895,7 @@ namespace ZoneTool::IW5
 					allocator.allocate<unsigned char>(sizeof(stub_palette_bitstream));
 				memcpy(new_asset->lightGrid.paletteBitstream, stub_palette_bitstream,
 					sizeof(stub_palette_bitstream));
-				// These two tables are engine constants in IW7, not per-map data. All five authentic
-				// maps (mp_frontend, mp_dome_dusk, mp_paris, cp_zmb, mp_breakneck) ship them
-				// byte-identical: skyLightGridColors all zero, and defaultLightGridColors the single
-				// row (0, 0, 0.21875) repeated for all 56 bins.
 				//
-				// An earlier version converted them 1:1 from IW5's colors[0]/colors[1] the way the H1
-				// converter does, which is wrong here: it wrote a non-zero sky table where every
-				// shipped map writes zeros, and a default table 3.5x too bright with no zeros in it
-				// (mean 0.2584 against the shipped 0.0729). That is a constant ambient floor added to
-				// everything in the map, and it is what made converted maps read washed out even once
-				// the probe volume itself was correctly calibrated.
 				memset(&new_asset->lightGrid.skyLightGridColors, 0, sizeof(IW7::GfxLightGridColorsHDR));
 				for (int i = 0; i < 56; i++)
 				{
@@ -1045,7 +903,6 @@ namespace ZoneTool::IW5
 					new_asset->lightGrid.defaultLightGridColors.rgb[i][1] = 0.0f;
 					new_asset->lightGrid.defaultLightGridColors.rgb[i][2] = 0.21875f;
 				}
-				// the matching one-leaf tree stub, also verbatim from shipped maps
 				static const unsigned int stub_node_table[2] = { 16777217u, 2147483648u };
 				static const unsigned char stub_leaf_table[6] = { 0x01, 0x83, 0x00, 0x04, 0x06, 0x11 };
 
@@ -1073,18 +930,10 @@ namespace ZoneTool::IW5
 				memset(&new_asset->lightGrid.probeData, 0, sizeof(IW7::GfxLightGridProbeData));
 				new_asset->lightGrid.probeData.zoneCount = 1;
 				new_asset->lightGrid.probeData.zones = allocator.allocate<IW7::GfxGpuLightGridZone>(1);
-				// probeData is IW7's only working static model lighting path: a GPU tetrahedral volume
-				// of L2 SH probes, walked in the shader from a per-voxel seed tetrahedron. The
-				// octree/palette light grid IW7 inherited from the IW6/H1 lineage is vestigial - every
-				// authentic map ships a 3-entry stub palette and a 2-node stub tree - so without a real
-				// volume here every XModel renders black, viewhands included.
 				//
-				// See X64/Utils/LightGrid/LightGridProbes.hpp for the format notes this builds against.
 				float ambient[3] = { 0.0f, 0.0f, 0.0f };
 				if (asset->lightGrid.colorCount && asset->lightGrid.colors)
 				{
-					// weight each palette entry by how many grid cells actually use it - averaging colors[]
-					// flat would give a rarely referenced entry the same say as the dominant one.
 					std::vector<double> usage(asset->lightGrid.colorCount, 0.0);
 					double total_usage = 0.0;
 					for (unsigned int i = 0; asset->lightGrid.entries && i < asset->lightGrid.entryCount; i++)
@@ -1099,7 +948,6 @@ namespace ZoneTool::IW5
 
 					if (total_usage == 0.0)
 					{
-						// octree-only grid (no legacy entries): fall back to a flat palette average
 						std::fill(usage.begin(), usage.end(), 1.0);
 						total_usage = static_cast<double>(asset->lightGrid.colorCount);
 					}
@@ -1113,8 +961,6 @@ namespace ZoneTool::IW5
 							continue;
 						}
 
-						// the 56 directional bins are shared between IW5 and IW7, so the mean over the
-						// sphere is the entry's ambient radiance.
 						lightgrid_sh::ldr_colors_to_hdr(asset->lightGrid.colors[i].rgb, hdr_colors);
 						double entry[3] = { 0.0, 0.0, 0.0 };
 						for (unsigned int j = 0; j < 56; j++)
@@ -1136,16 +982,6 @@ namespace ZoneTool::IW5
 					}
 				}
 
-				// Calibration against the four stock maps, over probes actually referenced by
-				// tetrahedra (luminance p5/median/p95): mp_frontend 0.85/1.44/7.55, mp_dome_dusk
-				// 0.00/0.84/3.65, mp_paris 0.02/0.68/12.93, mp_breakneck 0.00/2.79/2.79. project_sh
-				// already carries the 2*sqrt(pi) = 3.5449 projection factor, so a scale of 1.0 is the
-				// physically correct value - and it puts mp_test_h1's median at 0.74, right in that
-				// range. Earlier builds used 32 and then 9, calibrated against mp_frontend's mean DC
-				// alone; that map is an outlier bright lobby whose probes are all identical to its zone
-				// fallback, and matching it made every converted map ~9x too bright with no dark areas
-				// at all (p5 3.07 against 0.00-0.85 for stock). This is the knob if a map reads too
-				// dark or too bright.
 				constexpr float sh_ambient_scale = 1.0f;
 
 				lightgrid_probes::build_params probe_params{};
@@ -1155,13 +991,6 @@ namespace ZoneTool::IW5
 					probe_params.bounds_max[i] = asset->bounds.midPoint[i] + asset->bounds.halfSize[i];
 				}
 
-				// Per-probe lighting out of the IW5 grid. The legacy row data gives every populated
-				// grid position and the entry it points at; each entry's colorsIndex selects one of
-				// the 56-bin colour tables, whose mean over the sphere is that cell's ambient
-				// radiance. Grid space is the usual legacy one: 32-unit cells in x/y, 64 in z,
-				// biased by 131072 (4096 cells in x/y, 2048 in z).
-				// one projected SH set per palette entry, keyed by grid cell, plus the cell's sun
-				// visibility at [27]
 				using probe_sh = std::array<float, 28>;
 				std::unordered_map<unsigned long long, probe_sh> grid_samples;
 
@@ -1198,8 +1027,6 @@ namespace ZoneTool::IW5
 
 						if (!colour_cached[colors_index])
 						{
-							// project the 56 directional bins onto IW7's SH basis rather than
-							// averaging them away - the average is what made every model flat
 							lightgrid_sh::ldr_colors_to_hdr(asset->lightGrid.colors[colors_index].rgb, bins);
 							lightgrid_probes::project_sh(bins, lightgrid_sh::grid_basis_dirs, 56,
 								sh_ambient_scale, colour_cache[colors_index].data());
@@ -1210,11 +1037,6 @@ namespace ZoneTool::IW5
 							| (static_cast<unsigned long long>(ref.pos[1]) << 16)
 							| static_cast<unsigned long long>(ref.pos[2]);
 
-						// coeffs[27] is the probe's sun visibility, and it is per cell rather than per
-						// palette entry, so it cannot live in the colour cache. The source only tells
-						// us which primary light lit the cell, so this is binary where shipped maps
-						// carry a continuous term - still far better than the constant 1.0 we used to
-						// write, which claimed every probe in the map sees the full sun.
 						auto cell = colour_cache[colors_index];
 						cell[27] = is_sun_light(asset->lightGrid.entries[ref.entry_index].primaryLightIndex,
 							asset->lastSunPrimaryLightIndex) ? 1.0f : 0.0f;
@@ -1234,8 +1056,6 @@ namespace ZoneTool::IW5
 						const auto pli = static_cast<unsigned int>(
 							asset->lightGrid.entries[ref.entry_index].primaryLightIndex);
 
-						// legacy grid space: 32 units in x/y biased by 4096 cells, 64 in z
-						// biased by 2048
 						const float world[3] = {
 							(static_cast<float>(ref.pos[0]) - 4096.0f) * 32.0f,
 							(static_cast<float>(ref.pos[1]) - 4096.0f) * 32.0f,
@@ -1259,17 +1079,8 @@ namespace ZoneTool::IW5
 							kv.first, b.cells, b.lo[0], b.lo[1], b.lo[2], b.hi[0], b.hi[1], b.hi[2]);
 					}
 
-				// ---- sun visibility, traced through the grid's own occupancy ----------------
 				//
-				// A cell the legacy grid never populated is either inside solid geometry or outside
-				// the authored volume. Marching from each populated cell toward the sun and stopping
-				// at the first unpopulated cell therefore reproduces world-geometry shadowing, while
-				// a ray that leaves the populated bounds counts as open sky. Several jittered rays
-				// per cell make the terminator a gradient rather than a hard edge, which is what the
-				// continuous shipped term looks like.
 				//
-				// Limitation worth knowing: this only sees world geometry. Static models are not in
-				// the legacy grid, so a probe under a car or a crate still reads as lit.
 				if (!grid_samples.empty())
 				{
 					float sun_dir[3] = { 0.0f, 0.0f, 1.0f };
@@ -1290,7 +1101,6 @@ namespace ZoneTool::IW5
 							{
 								continue;
 							}
-							// dir points toward the sun, which is the way the ray has to travel
 							sun_dir[0] = sun_light.dir[0] / len;
 							sun_dir[1] = sun_light.dir[1] / len;
 							sun_dir[2] = sun_light.dir[2] / len;
@@ -1317,7 +1127,6 @@ namespace ZoneTool::IW5
 							}
 						}
 
-						// an orthonormal pair perpendicular to the sun, for the jitter cone
 						float jitter_u[3], jitter_v[3];
 						{
 							float helper[3] = { 0.0f, 0.0f, 1.0f };
@@ -1337,20 +1146,8 @@ namespace ZoneTool::IW5
 							normalize_proxy_axis(jitter_v);
 						}
 
-						// Static models as sun occluders.
 						//
-						// The march above can only stop on a cell the legacy grid never populated, so it
-						// sees world geometry and nothing else. Measured on the shipped output, that left
-						// coeffs[27] at a SINGLE distinct value - 1.0 for all 57,425 probes - against
-						// 10,611-14,112 distinct values in every authentic map, 28-38% of whose probes sit
-						// at exactly 0. The term carried no information: every probe claimed a completely
-						// unoccluded view of the sun, including probes standing inside a structure built
-						// out of static models.
 						//
-						// Rasterise each static model's world-space bounds into the same grid space and
-						// treat those cells as blockers. It is an OBB-to-AABB approximation, so a thin or
-						// hollow model over-occludes a little; far closer to the truth than ignoring
-						// models entirely.
 						std::unordered_set<unsigned long long> model_blocked;
 						{
 							size_t marked = 0;
@@ -1389,7 +1186,6 @@ namespace ZoneTool::IW5
 									static_cast<int>(std::floor((centre[2] + extent[2]) / 64.0f)) + 2048,
 								};
 
-								// one absurd model must not be able to blanket the whole map
 								const unsigned long long span =
 									static_cast<unsigned long long>(cell_hi[0] - cell_lo[0] + 1)
 									* static_cast<unsigned long long>(cell_hi[1] - cell_lo[1] + 1)
@@ -1427,12 +1223,6 @@ namespace ZoneTool::IW5
 
 						for (auto& entry : grid_samples)
 						{
-							// What IW5's own bake says about this cell, stashed in [27] when
-							// grid_samples was populated. The march below is a heuristic over grid
-							// occupancy; this is ground truth from a compiler that had the real
-							// geometry, so it bounds the heuristic rather than being replaced by
-							// it. A cell IW5 lit with a local light, or with no primary light at
-							// all, cannot legitimately be traced as seeing the sun.
 							const auto source_sees_sun = entry.second[27];
 
 							const float start[3] = {
@@ -1445,7 +1235,6 @@ namespace ZoneTool::IW5
 							for (unsigned int r = 0; r < sun_trace_rays; r++)
 							{
 								const auto phi = (2.0f * light_proxy_pi * r) / sun_trace_rays;
-								// ray 0 is the sun itself, the rest ring it
 								const auto spread = (r == 0) ? 0.0f : sun_trace_cone;
 
 								float dir[3];
@@ -1456,8 +1245,6 @@ namespace ZoneTool::IW5
 								}
 								normalize_proxy_axis(dir);
 
-								// grid cells are 32 units in x/y and 64 in z, so a world direction has
-								// to be rescaled before it can be walked in cell space
 								float step[3] = { dir[0] / 32.0f, dir[1] / 32.0f, dir[2] / 64.0f };
 								const auto longest = std::max(std::fabs(step[0]),
 									std::max(std::fabs(step[1]), std::fabs(step[2])));
@@ -1468,7 +1255,7 @@ namespace ZoneTool::IW5
 								}
 								for (int k = 0; k < 3; k++)
 								{
-									step[k] /= (longest * 2.0f); // half a cell per step
+									step[k] /= (longest * 2.0f);
 								}
 
 								float pos[3] = { start[0], start[1], start[2] };
@@ -1489,7 +1276,7 @@ namespace ZoneTool::IW5
 										|| cell[1] < lo[1] || cell[1] > hi[1]
 										|| cell[2] < lo[2] || cell[2] > hi[2])
 									{
-										escaped = true; // left the authored volume - open sky
+										escaped = true;
 										break;
 									}
 
@@ -1498,11 +1285,11 @@ namespace ZoneTool::IW5
 										| static_cast<unsigned long long>(cell[2]);
 									if (grid_samples.find(key) == grid_samples.end())
 									{
-										break; // unpopulated cell - solid world geometry
+										break;
 									}
 									if (model_blocked.find(key) != model_blocked.end())
 									{
-										break; // inside a static model's bounds
+										break;
 									}
 								}
 
@@ -1515,12 +1302,6 @@ namespace ZoneTool::IW5
 							const auto traced = static_cast<float>(open_rays)
 								/ static_cast<float>(sun_trace_rays);
 
-							// The march can only stop on a cell the legacy grid left unpopulated,
-							// so it escapes through anything thinner than its step and through
-							// every roof the bake happened to fill. Measured on mp_test_h1 that
-							// left 98.9% of cells "fully lit" and 0.2% shadowed, while IW5 itself
-							// marks 1526 cells with primaryLightIndex 0 - no primary light at all.
-							// We were computing the right answer and then discarding it.
 							const auto visibility = traced * source_sees_sun;
 							if (visibility < traced)
 							{
@@ -1549,11 +1330,6 @@ namespace ZoneTool::IW5
 					}
 				}
 
-				// The per-cell sun flag above is binary, but shipped maps carry a continuous
-					// visibility term (10611 distinct values in mp_dome_dusk, 14112 in mp_paris). A
-					// hard 0/1 field snaps between adjacent probes and shows up as blown-white and
-					// hard-black patches across a single model. Two 3x3x3 box passes over the
-					// populated cells turn it into the soft gradient a real occlusion bake produces.
 					for (int pass = 0; pass < 2; pass++)
 					{
 						std::unordered_map<unsigned long long, float> smoothed;
@@ -1600,18 +1376,8 @@ namespace ZoneTool::IW5
 					}
 				}
 
-				// Diagnostic, off by default. Bakes a position ramp into every probe instead of real
-				// lighting: red rises with +x, green with +y, blue with +z across the world bounds.
-				// Convert a map with this on and walk around - if the models change colour the
-				// tetrahedral walk resolves and any remaining flatness is a sampling problem; if they
-				// stay one flat colour the walk never resolves and the runtime is falling back to
-				// zones[0].fallbackProbeData, which is what a uniformly lit map means.
 				constexpr bool debug_position_ramp = false;
 
-				// Diagnostics: how far the shell search has to reach, and how much range the source
-				// palette actually has. Our probes span only 0.46x..1.26x of their median where stock
-				// maps span 0..4x, and the two candidate explanations - a narrow source palette, or
-				// the shell search smearing lit values over dark cells - need different fixes.
 				unsigned int resolve_radius_hits[6] = {};
 
 				const auto sample_sh = [&](const float* pos, float* out_sh)
@@ -1623,7 +1389,6 @@ namespace ZoneTool::IW5
 							{
 								const auto span = probe_params.bounds_max[c] - probe_params.bounds_min[c];
 								const auto t = span > 0.0f ? (pos[c] - probe_params.bounds_min[c]) / span : 0.0f;
-								// keep the ramp in the same brightness range as real probes
 								ramp[c] = std::min(std::max(t, 0.0f), 1.0f) * 0.25f;
 							}
 							lightgrid_probes::constant_sh(ramp, sh_ambient_scale, out_sh);
@@ -1635,18 +1400,7 @@ namespace ZoneTool::IW5
 						const auto gy = static_cast<int>(std::floor(pos[1] / 32.0f)) + 4096;
 						const auto gz = static_cast<int>(std::floor(pos[2] / 64.0f)) + 2048;
 
-						// Probes land on cell corners and plenty of cells are empty (walls, solid),
-						// so widen the search rather than going black - but only so far. At the
-						// old limit of 4 a probe could take its lighting from 128 units away in
-						// x/y, which is straight through any wall in the map, and 28% of probes
-						// were resolving off-cell (11883 at radius 1, 4250 at radius 2). That is a
-						// light-through-wall mechanism in its own right: the omni on mp_test_h1
-						// lights cells from y=-288 while the viewmodel at y=-347 is exactly two
-						// cells outside, well inside the old reach.
 						//
-						// One cell is what a corner probe legitimately needs, since its own cell
-						// centre may be unpopulated while the cell it borders is not. Anything
-						// beyond that is a guess about a region the bake deliberately left empty.
 						constexpr int probe_resolve_max_radius = 1;
 						for (int radius = 0; radius <= probe_resolve_max_radius; radius++)
 						{
@@ -1660,7 +1414,7 @@ namespace ZoneTool::IW5
 									{
 										if (std::max(std::max(std::abs(dx), std::abs(dy)), std::abs(dz)) != radius)
 										{
-											continue; // only the new shell
+											continue;
 										}
 										const auto x = gx + dx, y = gy + dy, z = gz + dz;
 										if (x < 0 || y < 0 || z < 0 || x > 0xFFFF || y > 0xFFFF || z > 0xFFFF)
@@ -1675,8 +1429,6 @@ namespace ZoneTool::IW5
 										{
 											continue;
 										}
-										// weight z harder, matching how the legacy sampler treats
-										// vertical distance
 										const auto dist = dx * dx + dy * dy + 4 * dz * dz;
 										if (dist < best_dist)
 										{
@@ -1694,23 +1446,12 @@ namespace ZoneTool::IW5
 							}
 						}
 
-						// nothing within reach - fall back to the map average, DC only, and assume the
-						// probe is lit like the zone fallback (which every shipped map sets to 1.0)
 						resolve_radius_hits[5]++;
 						lightgrid_probes::constant_sh(ambient, sh_ambient_scale, out_sh);
 						out_sh[27] = 1.0f;
 					};
 
-				// Only emit probe cells where the source light grid actually has data. Shipped IW7
-				// volumes are sparse and shaped like the map; ours filled the whole bounding box,
-				// so every cell - including the ones inside walls and outside the play space - got
-				// a plausible mid-grey from the nearest lit sample via the shell search below. That
-				// is what left the volume a solid slab with no dark areas anywhere, and it reads in
-				// game as "lit from every direction": right average colour, no contrast, no form.
 				//
-				// One grid cell of margin keeps a shell of probes around occupied space, since
-				// probes sit on cell corners and a model at the edge of the play area still needs
-				// all eight of them.
 				if (!grid_samples.empty())
 				{
 					probe_params.cell_occupied = [&grid_samples](const float* lo, const float size)
@@ -1748,12 +1489,10 @@ namespace ZoneTool::IW5
 				const auto volume = lightgrid_probes::build(probe_params, sample_sh, sh_ambient_scale);
 
 				{
-					// what the shell search had to do
 					ZONETOOL_INFO("GfxWorld \"%s\": probe resolve radius 0=%u 1=%u 2=%u 3=%u 4=%u, map-average fallback=%u",
 						asset->name, resolve_radius_hits[0], resolve_radius_hits[1], resolve_radius_hits[2],
 						resolve_radius_hits[3], resolve_radius_hits[4], resolve_radius_hits[5]);
 
-					// how much dynamic range the source palette carries, as projected DC luminance
 					std::vector<float> pal_lum;
 					pal_lum.reserve(grid_samples.size());
 					for (const auto& kv : grid_samples)
@@ -1773,55 +1512,22 @@ namespace ZoneTool::IW5
 					}
 				}
 
-				// ---- per-voxel light lists -------------------------------------------------
 				//
-				// Leaving every leaf on one empty list is not "no data" - it is the assertion that
-				// no light reaches any voxel in the map. IW7 keeps no other precomputed bound on a
-				// local light's reach, so all that is left is the frustumLights proxy hull below,
-				// a convex volume around the light that knows nothing about geometry. An omni
-				// behind a wall therefore lights whatever is on the far side of it, viewmodels
-				// included, and no shadow setting changes that because no shadow test is involved.
 				//
-				// Format, decoded from mp_frontend and mp_paris: a leaf's lightListAddress indexes
-				// lightListArray, and the ushort there is (count << 7) - the low seven bits are
-				// clear in every entry of both maps - followed by count raw indices into
-				// ComWorld::primaryLights. Both maps open the array with the same two slots
-				// (16384, 1) and put the empty list at address 2, which is what leaves with no
-				// lights point at. That preamble decodes as a 128-entry list that would overrun
-				// either array, so its meaning is not known; it is reproduced verbatim and nothing
-				// is ever pointed at address 0 or 1.
 				//
-				// Spots only - see light_list_spot_only below for the measurement. A directional
-				// light reaches every voxel equally so listing it would exclude nothing, and the
-				// sun is bounded by its shadow cascades instead; why stock also leaves omnis out
-				// is not established, only that it does, across 142 of them without exception.
 				//
-				// Occlusion reuses the light grid occupancy the sun bake marches, so it inherits
-				// the same limitation: it sees world geometry only, and a leaf shadowed solely by
-				// a static model will still list the light.
 				std::vector<unsigned short> voxel_leaf_light_address;
 				std::vector<unsigned short> voxel_light_list;
 				if (volume.valid && volume.leaf_count && converter_com_world && !grid_samples.empty()
 					&& volume.leaf_size > 0.0f
 					&& volume.leaf_bounds_min.size() >= static_cast<size_t>(volume.leaf_count) * 3)
 				{
-					constexpr float light_trace_step = 16.0f;   // half the 32-unit grid cell
-					constexpr float light_trace_slack = 48.0f;  // geometry hugging the bulb
+					constexpr float light_trace_step = 16.0f;
+					constexpr float light_trace_slack = 48.0f;
 					constexpr unsigned short light_list_empty_address = 2;
 					constexpr size_t light_list_max_per_leaf = 16;
 
-					// Spot-only, which is measured rather than assumed. Across mp_frontend,
-					// mp_paris and cp_zmb the lists carry 6640 references and every single one is
-					// a SPOT, while those maps hold 22 directional and 142 omni lights that are
-					// never referenced once. cp_zmb is the decisive one: 142 omnis, 6541
-					// references, no omni among them.
 					//
-					// It also does not gate what you might expect. Emitting light 3 of mp_test_h1
-					// into no list at all left it still lighting the viewmodel through a wall, so
-					// this structure does not feed dynamic model lighting - that comes from the
-					// clustered frustumLights z-bins. These lists are still worth getting right
-					// (one shared empty list is a wrong assertion, not missing data), but they are
-					// not the light-through-wall mechanism.
 					constexpr bool light_list_spot_only = true;
 
 					struct local_light
@@ -1829,7 +1535,7 @@ namespace ZoneTool::IW5
 						unsigned short index;
 						bool is_spot;
 						float origin[3];
-						float axis[3];   // down the cone, pointing away from the light
+						float axis[3];
 						float radius;
 						float half_fov;
 					};
@@ -1861,8 +1567,6 @@ namespace ZoneTool::IW5
 							memcpy(light.origin, src.origin, sizeof(light.origin));
 							light.radius = src.radius;
 
-							// dir points toward the light, so the cone runs the other way - the
-							// same convention the frustum proxies are built on
 							float axis[3] = { -src.dir[0], -src.dir[1], -src.dir[2] };
 							const auto len = std::sqrt((axis[0] * axis[0]) + (axis[1] * axis[1])
 								+ (axis[2] * axis[2]));
@@ -1875,7 +1579,6 @@ namespace ZoneTool::IW5
 							}
 							else
 							{
-								// no axis to cone against, so treat it as omnidirectional
 								light.axis[2] = -1.0f;
 								light.is_spot = false;
 							}
@@ -1886,8 +1589,6 @@ namespace ZoneTool::IW5
 						}
 					}
 
-					// a cell carrying a light grid sample is open space; anything else is solid or
-					// outside the authored volume
 					const auto cell_open = [&grid_samples](const float p[3])
 					{
 						const auto x = static_cast<int>(std::floor(p[0] / 32.0f)) + 4096;
@@ -1903,9 +1604,6 @@ namespace ZoneTool::IW5
 						return grid_samples.find(key) != grid_samples.end();
 					};
 
-					// The last stretch before the bulb is skipped: lights are routinely mounted in
-					// or against geometry, and marching all the way in would have every such light
-					// occlude itself out of every list.
 					const auto reaches = [&](const float from[3], const float to[3])
 					{
 						float dir[3] = { to[0] - from[0], to[1] - from[1], to[2] - from[2] };
@@ -1937,7 +1635,7 @@ namespace ZoneTool::IW5
 					};
 
 					voxel_leaf_light_address.assign(volume.leaf_count, light_list_empty_address);
-					voxel_light_list = { 16384, 1, 0 }; // preamble, then the shared empty list
+					voxel_light_list = { 16384, 1, 0 };
 
 					std::map<std::vector<unsigned short>, unsigned short> list_address;
 					std::vector<std::pair<float, unsigned short>> ranked;
@@ -1966,15 +1664,11 @@ namespace ZoneTool::IW5
 							const auto dist = std::sqrt((delta[0] * delta[0])
 								+ (delta[1] * delta[1]) + (delta[2] * delta[2]));
 
-							// sphere against the leaf's bounding sphere, the conservative side of
-							// a sphere-box test and a lot cheaper
 							if (dist - half_diag > light.radius)
 							{
 								continue;
 							}
 
-							// cone, widened by the angle the leaf subtends from the light so a
-							// narrow beam crossing a large voxel is not missed
 							if (light.is_spot && dist > 0.001f)
 							{
 								const auto dot = ((delta[0] * light.axis[0])
@@ -1988,10 +1682,6 @@ namespace ZoneTool::IW5
 								}
 							}
 
-							// One unoccluded sample anywhere in the leaf is enough to keep the
-							// light: a voxel is far larger than the features that shadow it, and
-							// dropping a light that should be there is a visible bug where keeping
-							// a spare one only costs a little binning work.
 							auto seen = false;
 							for (int s = 0; s < 9 && !seen; s++)
 							{
@@ -2009,7 +1699,7 @@ namespace ZoneTool::IW5
 								}
 								if (!cell_open(p))
 								{
-									continue; // sample sits in solid, so it sees nothing
+									continue;
 								}
 								seen = reaches(p, light.origin);
 							}
@@ -2026,7 +1716,6 @@ namespace ZoneTool::IW5
 							continue;
 						}
 
-						// nearest first, so a clamp keeps the lights that matter most
 						std::sort(ranked.begin(), ranked.end());
 						if (ranked.size() > light_list_max_per_leaf)
 						{
@@ -2039,7 +1728,7 @@ namespace ZoneTool::IW5
 						{
 							hits.push_back(r.second);
 						}
-						std::sort(hits.begin(), hits.end()); // canonical, so equal sets share
+						std::sort(hits.begin(), hits.end());
 
 						const auto found = list_address.find(hits);
 						if (found != list_address.end())
@@ -2049,7 +1738,6 @@ namespace ZoneTool::IW5
 							continue;
 						}
 
-						// addresses are ushorts, so the array cannot grow past 64K entries
 						if (voxel_light_list.size() + hits.size() + 1 > 0xFFFF)
 						{
 							dropped_leaves++;
@@ -2064,9 +1752,6 @@ namespace ZoneTool::IW5
 						lit_leaves++;
 					}
 
-					// The leaf boxes come from the generator's own cell coordinates, so this can
-					// only fail if the two disagree about where the volume sits - worth knowing
-					// before anything downstream trusts the lists.
 					{
 						float ext_lo[3] = { 1e30f, 1e30f, 1e30f };
 						float ext_hi[3] = { -1e30f, -1e30f, -1e30f };
@@ -2115,27 +1800,10 @@ namespace ZoneTool::IW5
 							"every one will be culled everywhere", asset->name, locals.size());
 					}
 
-					// ---- per-surface / per-static-model light lists --------------------------
 					//
-					// GfxWorldLightLists is the receiver half of the lighting relation: for each
-					// lit surface and each static model, which primary lights reach it. Every
-					// stock map ships it and we wrote it null, which leaves IW7 with no
-					// per-surface light visibility at all.
 					//
-					// A lit surface is simply index [0, staticSurfaceCount) into dpvs.surfaces:
-					// litOpaqueSurfsBegin is 0 and the four sorted ranges run contiguously up to
-					// emissiveSurfsEnd, which equals staticSurfaceCount on all seven stock maps.
-					// Surfaces past it are unlit - sky and such - and get no list.
 					//
-					// This is NOT the transpose of shadowGeomOptimized. That one is casters,
-					// light -> objects, and leaves the sun range empty because IW7 keeps sun
-					// casters in GfxSurface::flags; measured on mp_frontend it holds 5 references
-					// over 3 surfaces, all lights above its lastSun of 20, while its receiver
-					// lists hold 18 lists of 4-6 entries dominated by indices 1..20. Different
-					// sets, so this needs its own pass.
 					{
-						// Stock's longest list is 20 (mp_frontend), so this only ever bites on a
-						// surface sitting in a genuinely crowded light rig.
 						constexpr size_t light_list_max_per_object = 24;
 
 						struct receiver_light
@@ -2163,10 +1831,6 @@ namespace ZoneTool::IW5
 
 								if (type == light_type_dir)
 								{
-									// A directional light has no volume to test against, so every
-									// lit object carries it. Stock agrees: mp_frontend's lists are
-									// dominated by its 20 sun indices. Dropping it would be worse
-									// than carrying one index too many.
 									light.directional = true;
 								}
 								else if (type == light_type_spot || type == light_type_omni)
@@ -2180,7 +1844,6 @@ namespace ZoneTool::IW5
 									memcpy(light.origin, src.origin, sizeof(light.origin));
 									light.radius = src.radius;
 
-									// dir points toward the light, so the cone runs the other way
 									float axis[3] = { -src.dir[0], -src.dir[1], -src.dir[2] };
 									const auto len = std::sqrt((axis[0] * axis[0])
 										+ (axis[1] * axis[1]) + (axis[2] * axis[2]));
@@ -2202,7 +1865,7 @@ namespace ZoneTool::IW5
 								}
 								else
 								{
-									continue; // NONE
+									continue;
 								}
 
 								receivers.push_back(light);
@@ -2254,9 +1917,6 @@ namespace ZoneTool::IW5
 									}
 								}
 
-								// the same occupancy march the voxel light lists use: a light that
-								// cannot see the object through open grid cells does not reach it,
-								// which is the whole point of the structure
 								if (!reaches(light.origin, bounds.midPoint))
 								{
 									continue;
@@ -2266,8 +1926,6 @@ namespace ZoneTool::IW5
 							}
 						};
 
-						// offset 0 is the empty list, which is what stock puts there - mp_frontend
-						// opens its pool with a zero word and points a surface at it
 						std::vector<unsigned short> lists;
 						lists.push_back(0);
 						std::map<std::vector<unsigned short>, unsigned int> list_offset;
@@ -2277,7 +1935,6 @@ namespace ZoneTool::IW5
 						{
 							if (hits.size() > light_list_max_per_object)
 							{
-								// sorted ascending, so this keeps the lowest indices - the suns
 								hits.resize(light_list_max_per_object);
 								clamped++;
 							}
@@ -2299,8 +1956,6 @@ namespace ZoneTool::IW5
 							return offset;
 						};
 
-						// Read off the IW5 side: the dpvs block that copies these across runs much
-						// later in this function, so new_asset's copies are still 0 here.
 						const auto surface_count = std::min(asset->dpvs.staticSurfaceCount,
 							asset->surfaceCount);
 						const auto smodel_count = asset->dpvs.smodelCount;
@@ -2368,9 +2023,6 @@ namespace ZoneTool::IW5
 				}
 				else if (volume.valid && volume.leaf_count)
 				{
-					// Falling through here writes the generator's placeholder - one empty list for
-					// the whole map - which is the state that lets local lights through walls. It
-					// is a silent failure otherwise, so say which input was missing.
 					ZONETOOL_WARNING("GfxWorld \"%s\": no voxel light lists (com world %s, %zu grid "
 						"cells, %u leaves, %.1f unit leaves) - local lights will not be culled by "
 						"geometry", asset->name, converter_com_world ? "ok" : "MISSING",
@@ -2382,23 +2034,8 @@ namespace ZoneTool::IW5
 				{
 					auto& pd = new_asset->lightGrid.probeData;
 
-					// gpuVisibleProbes is NOT a second copy of the grid probes. R_LoadWorld calls
-					// sub_1404BE920, which walks gpuVisibleProbePositions and uploads every origin into
-					// the "light grid sampling requests" buffer; the GPU then resolves the tetrahedral
-					// volume at those positions and writes the resulting SH into gpuVisibleProbesData,
-					// which is where static models read their lighting from.
 					//
-					// The array is a concatenation of per-model slices: smodel i owns
-					// [unk0, unk0 + unk3), where unk0/unk1 form a 32-bit first index and unk3 is the
-					// count. Verified exactly on mp_dome_dusk: sum(unk3) == gpuVisibleProbesCount ==
-					// 21152, and the sorted unk0 values equal the running sum of unk3 with no gaps or
-					// overlaps. unk2 is a layout enum that pins the count - 0 -> 2 points (2444 of 3157
-					// models), 1 -> 3, 2 and 3 -> larger sample grids for big models.
 					//
-					// Leaving these fields zero (what this converter did before) points every model at
-					// slice 0, so every model is lit by one sample regardless of where it stands - which
-					// is exactly the "one flat colour everywhere" symptom. Emit the simplest shipped
-					// layout instead: unk2 = 0 and two sample points at the model's own origin.
 					const auto smodel_count = asset->dpvs.smodelCount;
 					const auto sample_probe_count = smodel_count * smodel_probe_samples;
 
@@ -2406,25 +2043,14 @@ namespace ZoneTool::IW5
 					pd.gpuVisibleProbePositions = allocator.allocate<IW7::GfxGpuLightGridProbePosition>(
 						sample_probe_count ? sample_probe_count : 1);
 
-					// the trailing 0x2000 entries are GPU scratch and are zero in every shipped map
 					pd.gpuVisibleProbesData =
 						allocator.allocate<IW7::GfxSHProbeData>(sample_probe_count + 0x2000);
 
-					// bake the resolved SH too, so the array is sane before the GPU first writes it -
-					// shipped maps carry real values here, not zeros
 					for (unsigned int i = 0; i < smodel_count; i++)
 					{
 						const auto& placement = asset->dpvs.smodelDrawInsts[i].placement;
 
-						// Sample at the model's BOUNDS CENTRE, not its placement origin.
 						//
-						// Measured over every unk2 == 0 (two-sample) model in mp_dome_dusk, mp_paris
-						// and mp_afghan - 12,914 models - not one of them samples exactly at its
-						// placement origin. The offsets are small and centred (median 0.00 in x and
-						// y, slightly positive in z) with a p5..p95 spread of a few units laterally
-						// and up to +/-25 vertically, which is what a model-space bounds centre
-						// rotated into world space looks like. Sampling at the origin puts a tall
-						// prop's probe at its feet.
 						float position[3] = { placement.origin[0], placement.origin[1],
 							placement.origin[2] };
 						if (const auto* model = asset->dpvs.smodelDrawInsts[i].model)
@@ -2444,9 +2070,6 @@ namespace ZoneTool::IW5
 						unsigned short coeffs[32];
 						lightgrid_probes::encode_probe_sh(sh, coeffs);
 
-						// The two points of the unk2 == 0 layout are IDENTICAL in shipped data -
-						// 100% of pairs in every authentic map - so emitting the same position
-						// twice is correct, not a placeholder.
 						for (unsigned int k = 0; k < smodel_probe_samples; k++)
 						{
 							const auto slot = (i * smodel_probe_samples) + k;
@@ -2471,27 +2094,10 @@ namespace ZoneTool::IW5
 					memcpy(pd.tetrahedronNeighbors, volume.tetrahedron_neighbors.data(),
 						sizeof(unsigned int) * volume.tetrahedron_neighbors.size());
 
-					// tetrahedronVisibility is a COMPACTED array, and bit 31 of indexFlags is what
-					// selects into it.
 					//
-					// Measured across all six authentic maps, `tetrahedronCountVisible` is exactly
-					// the number of tetrahedra with **at least one** corner carrying bit 31 - not
-					// 41-47% by coincidence, but an exact match in every map:
 					//
-					//   mp_dome_dusk 103402   mp_paris 297161   mp_afghan 319972
-					//   mp_breakneck 213259   cp_zmb   322466   mp_frontend 13786
 					//
-					// So bit 31 is not the "refinement level" marker it was assumed to be: it marks
-					// a tetrahedron as having an entry, and the array is indexed by the running
-					// count of flagged tetrahedra. The entries themselves are 64 **uint8 weights**
-					// (four blocks of 16), not a 512-bit mask - shipped bytes take values like 0xDA,
-					// 0x93, 0x5D, saturating at 0xFF, and no shipped entry is all-0xFF.
 					//
-					// This generator sets no corner flags, so under that rule no tetrahedron has an
-					// entry and the honest emission is an empty array. Declaring
-					// tetrahedronCountVisible = tetrahedronCount while flagging nothing was
-					// internally inconsistent, and cost 64 bytes per tetrahedron of zone memory
-					// that nothing could ever address.
 					unsigned int visible_tets = 0;
 					for (unsigned int t = 0; t < volume.tetrahedron_count; t++)
 					{
@@ -2510,7 +2116,6 @@ namespace ZoneTool::IW5
 					{
 						pd.tetrahedronVisibility =
 							allocator.allocate<IW7::GfxGpuLightGridTetrahedronVisibility>(visible_tets);
-						// fully visible everywhere: we have no per-probe occlusion bake to put here
 						memset(pd.tetrahedronVisibility, 0xFF,
 							sizeof(IW7::GfxGpuLightGridTetrahedronVisibility) * visible_tets);
 					}
@@ -2532,24 +2137,10 @@ namespace ZoneTool::IW5
 					zone.firstVoxelTetrahedronIndex = volume.zone_first_voxel_tetrahedron_index;
 					zone.numVoxelTetrahedronIndices = volume.zone_num_voxel_tetrahedron_indices;
 
-					// the probe volume is indexed by the voxel tree's leaves, so the tree has to be the
-					// one the volume was built against - this replaces the per-sky stub built earlier
 					new_asset->voxelTreeCount = 1;
 					new_asset->voxelTree = allocator.allocate<IW7::GfxVoxelTree>(1);
 					auto& tree = new_asset->voxelTree[0];
-					// zoneBound is what selects this tree at run time, and getting it wrong is
-					// fatal rather than degraded: sub_140E3C1F0 walks voxelTree[], skips any entry
-					// with voxelTopDownViewNodeCount == 0, takes the first whose box *strictly*
-					// contains the camera (fabs(cam - midPoint) < halfSize on all three axes), and
-					// calls Sys_Error("No valid voxel trees.  Are there empty skyboxes in your
-					// map?") when none does.
 					//
-					// So it has to cover the volume this tree actually indexes, which is
-					// voxelTreeHeader->boundMin..boundMax below - the generator snaps the origin
-					// down to a root-cell boundary and rounds the extent up, making that box
-					// strictly larger than IW5's GfxWorld::bounds. Copying the smaller box (what
-					// this used to do) hard-errors for any camera in the margin between the two
-					// and buys nothing.
 					for (int i = 0; i < 3; i++)
 					{
 						tree.zoneBound.midPoint[i] = (volume.bound_min[i] + volume.bound_max[i]) * 0.5f;
@@ -2557,9 +2148,6 @@ namespace ZoneTool::IW5
 					}
 					tree.voxelTopDownViewNodeCount = static_cast<int>(volume.top_down_view_nodes.size());
 					tree.voxelInternalNodeCount = static_cast<int>(volume.internal_nodes.size());
-					// The baked lists replace the generator's placeholder pair, which points every
-					// leaf at one empty list. They are only used together - a leaf address means
-					// nothing against a different array - so both fall back or neither does.
 					const auto have_baked_lights =
 						voxel_leaf_light_address.size() == volume.leaf_nodes.size()
 						&& !voxel_light_list.empty();
@@ -2595,12 +2183,6 @@ namespace ZoneTool::IW5
 						allocator.allocate<unsigned int>(2 * tree.voxelInternalNodeCount); // runtime
 				}
 
-				// The zone fallback is used when a sample resolves to no tetrahedron; it is also all
-				// a map gets if the volume could not be built - which is exactly when it must not
-				// be zero. build() returns before it has any probes to average on its failure
-				// paths, so its zone_fallback_coeffs are zeroed there, and copying those through
-				// meant "volume failed" rendered as "every model black". Fall back to the map
-				// average instead, which is what the samples would have averaged to anyway.
 				if (volume.valid)
 				{
 					memcpy(zone.fallbackProbeData.coeffs, volume.zone_fallback_coeffs,
@@ -2613,7 +2195,7 @@ namespace ZoneTool::IW5
 
 					float fallback_sh[28] = {};
 					lightgrid_probes::constant_sh(ambient, sh_ambient_scale, fallback_sh);
-					fallback_sh[27] = 1.0f; // every shipped map's zone fallback is fully lit
+					fallback_sh[27] = 1.0f;
 					unsigned short fallback[32];
 					lightgrid_probes::encode_probe_sh(fallback_sh, fallback);
 					memcpy(zone.fallbackProbeData.coeffs, fallback,
@@ -2621,19 +2203,9 @@ namespace ZoneTool::IW5
 				}
 				memset(zone.fallbackProbeData.pad, 0, sizeof(zone.fallbackProbeData.pad));
 
-				// Diagnostic, off by default. Paints the two places a model can get a constant colour
-				// from, in colours nothing else in a map produces, so one run says which it is:
-				//   magenta -> the sample resolved to no tetrahedron and fell back to the zone probe,
-				//              i.e. the GPU walk is not resolving (note r_lightGridDefaultColor does
-				//              NOT cover this case - the engine uses this baked value, not the dvar);
-				//   green   -> the model is reading gpuVisibleProbesData slot 0, i.e. its probe index
-				//              is wrong rather than the walk;
-				//   varies  -> the walk works and lighting is being sampled per position;
-				//   unchanged -> the model is lit from neither, and the path is somewhere else.
 				constexpr bool debug_probe_paint = false;
 				if (debug_probe_paint)
 				{
-					// bright enough to be unmistakable next to a typical DC of ~26
 					constexpr float paint_level = 0.35f;
 					const float magenta[3] = { paint_level, 0.0f, paint_level };
 					const float green[3] = { 0.0f, paint_level, 0.0f };
@@ -2661,26 +2233,9 @@ namespace ZoneTool::IW5
 
 			new_asset->lightViewFrustums = allocator.allocate<IW7::GfxLightViewFrustum>(new_asset->primaryLightCount);
 
-			// ---- lightViewFrustums ---------------------------------------------------------
 			//
-			// The shadow pass culls casters against these planes, and sm_spotShadowCulling's own
-			// help calls mode 2 - the default - "respect line light + using optimized view
-			// volume", which is this. We shipped them zeroed on the reasoning that planeCount == 0
-			// early-outs as a pass in sub_140E1E2A0 / sub_140E1E510; that was never confirmed in
-			// game, and if it culls instead then every caster is dropped and a spot with a
-			// perfectly good caster list casts no shadow at all. Which is the symptom.
 			//
-			// Measured from shipped data: 6 planes, 8 corners, 36 indices (12 triangles),
-			// spot-only - mp_breakneck's single omni carries canUseShadowMap=1 and an EMPTY
-			// frustum, and an omni has no cone to build one from anyway. Planes are inward-facing
-			// (n.p + d >= 0 inside) and the indices are wound OUTWARD (positive signed volume),
-			// the opposite of frustumLights, which is inward because it is rasterised as the light
-			// volume. Do not copy the winding from the proxy builder.
 			//
-			// Stock hulls are geometry-fitted - mp_frontend light 21 has five vertices coplanar
-			// against a (0,0,-1) plane - so they cannot be reproduced exactly. A conservative
-			// frustum is the right substitute: too large costs shadow map resolution, too small
-			// silently drops casters.
 			{
 				constexpr auto light_view_frustum_near_frac = 0.01f;
 
@@ -2702,7 +2257,6 @@ namespace ZoneTool::IW5
 						continue;
 					}
 
-					// the cone opens along -dir, the same convention as the proxy hulls
 					float axis[3] = { -src.dir[0], -src.dir[1], -src.dir[2] };
 					const auto axis_len = std::sqrt((axis[0] * axis[0]) + (axis[1] * axis[1])
 						+ (axis[2] * axis[2]));
@@ -2715,8 +2269,6 @@ namespace ZoneTool::IW5
 						axis[k] /= axis_len;
 					}
 
-					// any basis perpendicular to the axis will do - the frustum is square and
-					// circumscribes a circular cone, so its roll is arbitrary
 					const auto axial = std::abs(axis[2]) > 0.9f;
 					const float helper[3] = { axial ? 1.0f : 0.0f, 0.0f, axial ? 0.0f : 1.0f };
 					const auto helper_dot = (helper[0] * axis[0]) + (helper[1] * axis[1])
@@ -2744,10 +2296,7 @@ namespace ZoneTool::IW5
 						(axis[0] * right[1]) - (axis[1] * right[0]),
 					};
 
-					// A square at depth d whose half extent is d * tan(halfFov) circumscribes the
-					// cone's circle there; its corners sit outside the cone, which is the safe
-					// direction for a culling volume.
-					const auto cos_outer = std::max(0.017452f, src.cosHalfFovOuter); // 89 degrees
+					const auto cos_outer = std::max(0.017452f, src.cosHalfFovOuter);
 					const auto tan_half = std::sqrt(std::max(0.0f,
 						1.0f - (cos_outer * cos_outer))) / cos_outer;
 
@@ -2761,7 +2310,6 @@ namespace ZoneTool::IW5
 						const auto extent = depth * tan_half;
 						for (int corner = 0; corner < 4; corner++)
 						{
-							// (-,-) (+,-) (+,+) (-,+) so a quad walks its rim in order
 							const auto sx = (corner == 0 || corner == 3) ? -extent : extent;
 							const auto sy = (corner < 2) ? -extent : extent;
 							for (int k = 0; k < 3; k++)
@@ -2773,8 +2321,8 @@ namespace ZoneTool::IW5
 					}
 
 					static const unsigned short quads[6][4] = {
-						{ 0, 1, 2, 3 }, // near
-						{ 4, 5, 6, 7 }, // far
+						{ 0, 1, 2, 3 },
+						{ 4, 5, 6, 7 },
 						{ 0, 1, 5, 4 },
 						{ 1, 2, 6, 5 },
 						{ 2, 3, 7, 6 },
@@ -2793,9 +2341,6 @@ namespace ZoneTool::IW5
 						indices.push_back(quad[3]);
 					}
 
-					// Rather than reason about the corner order, measure the signed volume and
-					// flip if it came out inward. Getting this backwards on frustumLights cost a
-					// whole test cycle and looked like a culling bug.
 					auto signed_volume = 0.0f;
 					for (size_t t = 0; t + 2 < indices.size(); t += 3)
 					{
@@ -2861,7 +2406,6 @@ namespace ZoneTool::IW5
 
 						auto dist = -((normal[0] * a[0]) + (normal[1] * a[1]) + (normal[2] * a[2]));
 
-						// inward-facing: the hull centre has to satisfy n.p + d >= 0
 						if (((normal[0] * centre[0]) + (normal[1] * centre[1])
 							+ (normal[2] * centre[2])) + dist < 0.0f)
 						{
@@ -2885,16 +2429,7 @@ namespace ZoneTool::IW5
 					asset->name, built, new_asset->primaryLightCount);
 			}
 
-			// the light shapes live in the ComWorld, which is loaded alongside this GfxWorld and
-			// shares its asset name
 			{
-				// Resolve the ComWorld from the asset DB rather than through converter_com_world.
-				// That global is only set once GenerateIW7ComWorld has run, and the GfxWorld is
-				// converted first, so it was still null here and *every* light silently ended up
-				// with an empty proxy hull - which is the "no local lights" state, since
-				// R_IsCameraInsideLightMeshVolume leaves an inverted z range for vertexCount == 0.
-				// The DB lookup has no ordering dependency. Fall back to the global so a caller
-				// that has already converted the ComWorld still works.
 				struct proxy_light
 				{
 					unsigned char type;
@@ -2941,7 +2476,6 @@ namespace ZoneTool::IW5
 							continue;
 						}
 
-						// dir points toward the light, so the volume runs the other way
 						float axis[3] = { -light.dir[0], -light.dir[1], -light.dir[2] };
 						normalize_proxy_axis(axis);
 
@@ -2949,11 +2483,8 @@ namespace ZoneTool::IW5
 						const auto cos_outer = std::max(-1.0f, std::min(1.0f, light.cos_half_fov_outer));
 						const auto half_angle = std::acos(cos_outer);
 
-						// past ~80 degrees the expanded cone runs into tan(), and the spot is most of a
-						// hemisphere anyway - the sphere hull contains it and stays well conditioned
 						if (light.type != light_type_spot && light.type != light_type_omni)
 						{
-							// NONE and DIR (the sun) carry no proxy in shipped maps
 							continue;
 						}
 
@@ -2969,36 +2500,15 @@ namespace ZoneTool::IW5
 						{
 							build_omni_proxy(mesh, light.origin, light.radius);
 						}
-						// Clip the hull to where the source bake says this light lands.
 						//
-						// This mesh is rasterised as the light's volume, so its shape decides where
-						// the light appears. An analytic cone or sphere runs straight through walls.
-						// The legacy light grid already knows better: every cell names the one
-						// primary light that lights models in it, computed by the IW3 compiler with
-						// real visibility, so the union of a light's cells is its true reach.
 						//
-						// A light with no cells is left unclipped rather than deleted: an empty hull is
-						// the "no local lights" state, and losing a light is worse than one that
-						// over-reaches.
 						//
-						// Known limit: this is a box, so the volume keeps flat faces where it is cut
-						// and the falloff terminates on cell boundaries rather than following the
-						// room. Fitting each vertex by a ray against world collision would fix that
-						// too, but the clipmap is converted after the GfxWorld, so the geometry is not
-						// available at this point.
 						{
 							const auto found = light_boxes.find(i);
 							if (found != light_boxes.end() && found->second.cells)
 							{
 								const auto& box = found->second;
-								// A full cell on BOTH sides, which is what quaK settled on by eye: it reaches the
-								// outer wall face and reads best in game. Tighter variants were tried and are
-								// worse to look at - half a cell on the max side only lands the hull exactly on
-								// the near surfaces, and no margin at all cuts the volume short of the room.
 								//
-								// None of this decides whether a light passes through a wall: the clustered
-								// binning uses the light sphere, not this hull, so the shape is a look choice
-								// rather than a cull. See the radius note in ComWorld.cpp.
 								constexpr float cell_margin[3] = { 32.0f, 32.0f, 64.0f };
 
 								for (size_t v = 0; v + 2 < mesh.vertices.size(); v += 3)
@@ -3021,7 +2531,6 @@ namespace ZoneTool::IW5
 
 						auto& dest = new_asset->frustumLights[i];
 
-						// 32 bytes per vertex, of which only the leading xyz is ever read
 						dest.vertexCount = static_cast<unsigned int>(mesh.vertices.size() / 3);
 						dest.vertices = allocator.allocate<char>(32 * dest.vertexCount);
 						for (unsigned int v = 0; v < dest.vertexCount; v++)
@@ -3041,34 +2550,16 @@ namespace ZoneTool::IW5
 				}
 			}
 
-			// The probe volume builds its own voxel tree and is indexed by that tree's leaves, so
-			// only fall back to the per-sky stub when no volume was generated.
 			if (!new_asset->voxelTree)
 			{
 				new_asset->voxelTreeCount = new_asset->skyCount;
 				new_asset->voxelTree = allocator.allocate<IW7::GfxVoxelTree>(new_asset->voxelTreeCount);
 				for (auto i = 0; i < new_asset->skyCount; i++)
 				{
-					// Union of the sky surfaces, not their average.
 					//
-					// This used to sum every sky surface's midPoint and halfSize and divide by the
-					// count. Averaging bounds is not a meaningful operation - the result is neither
-					// the union nor any real surface - and on a map whose sky is split into several
-					// surfaces it silently shrinks the zone. mp_test_h1 has three:
 					//
-					//   surf 25  mid(  0,    0, 224)  half(896, 896, 288)
-					//   surf 26  mid(  8,    8, 232)  half(888, 888, 280)
-					//   surf 27  mid(-20,   -3, 504)  half(896, 896,   8)   <- the thin top lid
-					//   average  mid( -4, 1.67, 320)  half(893, 893, 192)   -> z 128..512
 					//
-					// The lid's tiny z halfSize drags the average down and the zone starts at
-					// z = 128, cutting off everything below it - the whole lower half of a map whose
-					// real extent is z -64..512. Anything outside the zone falls back to
-					// zone_fallback_coeffs, which is the fully-lit default, so the effect is not
-					// "unlit" but "lit as if nothing occludes it".
 					//
-					// Stock maps ship a single sky surface, so their average happens to equal their
-					// union and this never showed up there.
 					const auto get_sky_bounds = [](const GfxSky& sky, const GfxWorld* world) -> Bounds
 					{
 						float lo[3] = { FLT_MAX, FLT_MAX, FLT_MAX };
@@ -3150,9 +2641,6 @@ namespace ZoneTool::IW5
 			new_asset->heightfieldCount = 0;
 			new_asset->heightfields = nullptr;
 
-			// Generated above, alongside the voxel light lists, where the light grid occupancy
-			// needed for the visibility march is in scope. Only cleared here when that pass did
-			// not run, which is the state that leaves IW7 with no per-surface light visibility.
 			if (!new_asset->lightLists.lists)
 			{
 				new_asset->lightLists.surfaceListOffsetCount = 0;
@@ -3213,23 +2701,9 @@ namespace ZoneTool::IW5
 			new_asset->dustMaterial = nullptr;
 			new_asset->materialLod0SizeThreshold = 0.5f;
 
-			// ---- spot shadow casters ---------------------------------------------------
 			//
-			// shadowGeomOptimized is the caster list the spot shadow pass draws. A light with a
-			// shadow map and no casters renders an empty shadow, which is indistinguishable in
-			// game from having no shadow at all - and that is what IW5 hands over: mp_test_h1's
-			// two local lights arrive with 1 surface and 0 static models each, on a map with 40
-			// static models. Whether IW3 never filled it in or the IW3->IW5 step drops it, it is
-			// not usable, so build the list here instead of copying it.
 			//
-			// The stored indices are world surface indices, not positions in dpvs.sortedSurfIndex:
-			// R_AddBsp reads shadowGeom->sortedSurfIndex[i] straight into surfIndex and hands it
-			// to R_ShouldDrawTransientZoneSurface. That is the same space dpvs.surfacesBounds is
-			// indexed by. smodelIndex holds indices into dpvs.smodelDrawInsts.
 			//
-			// Sun lights (index <= lastSunPrimaryLightIndex) get no list: IW7 keeps sun casters in
-			// GfxSurface::flags and GfxStaticModelDrawInst::sunShadowFlags instead, and every
-			// shipped map zeroes exactly that range.
 			{
 				ZONETOOL_INFO("GfxWorld \"%s\": lastSunPrimaryLightIndex=%u, source shadowGeom=%s",
 					asset->name, new_asset->lastSunPrimaryLightIndex,
@@ -3264,7 +2738,6 @@ namespace ZoneTool::IW5
 						continue;
 					}
 
-					// cone axis runs along -dir, the same convention as the frustum proxies
 					float axis[3] = { -light.dir[0], -light.dir[1], -light.dir[2] };
 					const auto axis_len = std::sqrt((axis[0] * axis[0]) + (axis[1] * axis[1])
 						+ (axis[2] * axis[2]));
@@ -3279,11 +2752,6 @@ namespace ZoneTool::IW5
 					const auto half_fov = std::acos(std::max(-1.0f,
 						std::min(1.0f, light.cosHalfFovOuter)));
 
-					// A box reaches the light if the light sphere touches it, and for a spot the
-					// box also has to fall inside the cone widened by the angle the box subtends -
-					// the same conservative pair of tests the voxel light lists use. Casters are
-					// better over-included than missed: an extra one costs a little shadow map
-					// fill, a missing one is a hole in the shadow.
 					const auto reaches = [&](const Bounds& bounds)
 					{
 						const auto radius = std::sqrt(
@@ -3343,7 +2811,6 @@ namespace ZoneTool::IW5
 						}
 					}
 
-					// both counts are ushorts in the struct
 					if (caster_surfaces.size() > 0xFFFF)
 					{
 						caster_surfaces.resize(0xFFFF);
@@ -3380,9 +2847,6 @@ namespace ZoneTool::IW5
 				}
 			}
 
-			// IW5's lightRegion array is only asset->primaryLightCount long. Reading past it took
-			// hullCount from whatever followed the array and then allocated and memcpy'd against
-			// that garbage, so the bound stays even though the two counts match again.
 			new_asset->lightRegion = allocator.allocate<IW7::GfxLightRegion>(new_asset->primaryLightCount);
 			for (unsigned int i = 0; i < new_asset->primaryLightCount; i++)
 			{
@@ -3432,12 +2896,6 @@ namespace ZoneTool::IW5
 				new_asset->dpvs.reflectionProbeVisDataCount = (new_asset->draw.reflectionProbeData.reflectionProbeInstanceCount + 0x1F) >> 5;
 				new_asset->dpvs.volumetricVisDataCount = (new_asset->draw.volumetrics.volumetricCount + 0x1F) >> 5;
 				new_asset->dpvs.decalVisDataCount = (new_asset->draw.decalVolumeCollectionCount + 0x1F) >> 5;
-				// umbra smodel object index -> smodel index: the object-ID decoder marks
-				// smodelVisData at lodData[objIndex] for tag 0x10000000. The object index is 1-based,
-				// which is what the trailing +1 entry is for - in every shipped IW7 map (mp_bog,
-				// mp_dome_dusk, mp_shipment) lodData[0] is 0 and lodData[1..smodelCount] is a
-				// permutation of 0..smodelCount-1. We keep the smodel order, so write that identity.
-				// Only matters if a tome ever resolves objects; ours takes the draw-everything path.
 				new_asset->dpvs.lodData = allocator.allocate<unsigned int>(new_asset->dpvs.smodelCount + 1);
 				for (unsigned int i = 0; i < new_asset->dpvs.smodelCount; i++)
 				{
@@ -3450,26 +2908,10 @@ namespace ZoneTool::IW5
 				}
 				REINTERPRET_CAST_SAFE(dpvs.smodelInsts);
 
-				// Per-sun-light caster mask for GfxSurface::flags, verified against IW7 itself
-				// (R_SortWorldSurfacesSetSurfaces in iw7_ship_dump.exe.c) rather than inferred:
 				//
-				//     && (*p_flags & 1) != 0
-				//     && (v13 = v7 >> 5,
-				//         g_world->dpvs.surfaceCastsSunShadow[v13] |= v8,
-				//         result = (*p_flags >> 3),
-				//         (_DWORD)result) )
 				//
-				// flags is a byte, so bit 0 is "casts sun shadow" and `>> 3` leaves bits 3..7 as
-				// the set of sun lights this surface casts for. Each set bit enrols the surface in
-				// one surfaceCastsSunShadowOpt row, capped at sunShadowOptCount.
 				//
-				// Note IW8 shifts by 1 here, not 3 - the same function, a different encoding. Do
-				// not port this constant from the IW8 decompilation.
 				//
-				// The plain surfaceCastsSunShadow array is filled by the `|=` inside that comma
-				// expression, so it is correct no matter what the mask holds; only the optimised
-				// rows depend on the shift. That is why passing IW5's flags through unchanged
-				// (bit 0 only) looks fine but leaves every opt row empty: 1 >> 3 == 0.
 				const auto sun_light_count =
 					std::min<unsigned int>(new_asset->lastSunPrimaryLightIndex, 5);
 				const auto sun_light_mask = static_cast<unsigned char>((1 << sun_light_count) - 1);
@@ -3486,9 +2928,6 @@ namespace ZoneTool::IW5
 					new_asset->dpvs.surfaces[i].material = reinterpret_cast<IW7::Material PTR64>(asset->dpvs.surfaces[i].material);
 					new_asset->dpvs.surfaces[i].lightmapIndex = asset->dpvs.surfaces[i].laf.fields.lightmapIndex;
 
-					// Bit 0 means the same thing in both engines and is the only bit IW5 ever sets.
-					// The rest of IW5's byte would be read as IW7's sun light mask, so mask it off
-					// and enrol every caster in all of the sun light sets.
 					const auto casts_sun_shadow = (asset->dpvs.surfaces[i].laf.fields.flags & 1) != 0;
 					new_asset->dpvs.surfaces[i].flags = casts_sun_shadow
 						? static_cast<unsigned char>(1 | (sun_light_mask << 3))
@@ -3523,46 +2962,16 @@ namespace ZoneTool::IW5
 					new_asset->dpvs.smodelDrawInsts[i].lightingHandle = asset->dpvs.smodelDrawInsts[i].lightingHandle;
 					new_asset->dpvs.smodelDrawInsts[i].cullDist = asset->dpvs.smodelDrawInsts[i].cullDist;
 					new_asset->dpvs.smodelDrawInsts[i].flags = asset->dpvs.smodelDrawInsts[i].flags;
-					// Env 0, which is what every stock map does. IW5's primaryLightIndex selects a
-					// primary light directly (1 = sun); IW7's primaryLightEnvIndex selects a
-					// ComPrimaryLightEnv, a *set* of up to 4 lights. Different index spaces.
 					//
-					// This used to carry IW5's index across, on the reasoning that env 0 is empty in
-					// our ComWorld so pointing at it would drop the sun from every static model. But
-					// env 0 is empty in *stock* too - all nine dumped ComWorlds have env 0 with
-					// numIndices == 0 and every static model pointing at it (see the note in
-					// ComWorld.cpp). Stock static models simply are not lit through this path; they
-					// take their lighting from the probe volume, which is why that volume has to work.
 					//
-					// Carrying the index across attached a specific local light to a whole model with
-					// no geometry test anywhere in the path - not the frustum hull, not the voxel
-					// light list, not the probes. That is the light-through-a-wall bug: it appeared
-					// per model ("only on that material, nowhere around it"), and no amount of
-					// clipping the light's volume touched it, because this path never consults it.
 					new_asset->dpvs.smodelDrawInsts[i].primaryLightEnvIndex = 0;
-					// Every static model in every stock map checked uses probe 0 (mp_dome_dusk 3157/3157,
-					// mp_breakneck 13269/13269) even though those maps ship 31 and 55 probes, so IW7 picks
-					// the reflection probe at runtime and the baked index is not per-model data - the same
-					// pattern as primaryLightEnvIndex and the sky/default colour tables. Carrying IW5's
-					// index across (1 and 4 on mp_test) points glossy models at a cubemap the engine never
-					// intended, which adds a bright environment specular on top of the albedo - white car
-					// paint over brown, while matte lightmapped world surfaces are unaffected.
 					new_asset->dpvs.smodelDrawInsts[i].reflectionProbeIndex = 0;
 					new_asset->dpvs.smodelDrawInsts[i].firstMtlSkinIndex = asset->dpvs.smodelDrawInsts[i].firstMtlSkinIndex;
-					// Which sun splits this model casts for. R_AddAllStaticModelSurfacesRangeSunShadow
-					// skips it outright when the bit for the current split is clear:
 					//
-					//     v23 = 1 << (sunShadowOptCount - 1);
-					//     || v23 && ((unsigned __int8)v23 & v32->sunShadowFlags) == 0
 					//
-					// Unlike GfxSurface::flags this is a plain mask from bit 0 - no `>> 3` - so the
-					// two fields do not share an encoding despite describing the same thing. For a
-					// single sun split this is 1, which is what it was hardcoded to; deriving it
-					// keeps a multi-sun map (mp_frontend has 20) enrolled in every split.
 					new_asset->dpvs.smodelDrawInsts[i].sunShadowFlags = sun_light_mask;
 					new_asset->dpvs.smodelDrawInsts[i].transientZone = 0;
 
-					// this model's slice of gpuVisibleProbePositions (see the light grid block above)
 					const auto probe_slice_first = i * smodel_probe_samples;
 					new_asset->dpvs.smodelDrawInsts[i].unk0 =
 						static_cast<unsigned short>(probe_slice_first & 0xFFFF);
@@ -3600,41 +3009,16 @@ namespace ZoneTool::IW5
 				memset(new_asset->dpvs.surfaceMaterials, 0, 
 					sizeof(IW7::GfxDrawSurf) * new_asset->surfaceCount); // zero data, runtime
 
-				// Measured over all seven stock maps (cp_rave, cp_zmb, mp_afghan, mp_breakneck,
-				// mp_fallen, mp_frontend, mp_paris), both rules hold exactly:
 				//
-				//   sunShadowOptCount    = min(lastSunPrimaryLightIndex, 5)
-				//   sunSurfVisDataCount  = surfaceVisDataCount rounded up to a multiple of 32
 				//
-				//   map           lastSun -> optCount    surfVisWords -> sunSurfVisDataCount
-				//   cp_rave            1  ->  1               227     ->  256
-				//   cp_zmb             3  ->  3               335     ->  352
-				//   mp_afghan          1  ->  1               202     ->  224
-				//   mp_breakneck       2  ->  2               487     ->  512
-				//   mp_fallen          2  ->  2               420     ->  448
-				//   mp_paris           2  ->  2               366     ->  384
-				//   mp_frontend       20  ->  5 (capped)        1     ->   32
 				//
-				// The cap is 5 because GfxSurface::flags only spares bits 3..7 for the per-sun-light
-				// mask. mp_frontend is the only map that reaches it, which is why hardcoding 5 and 32
-				// looks right on mp_test_h1 (lastSun 1, one vis word) but is wrong twice over: the
-				// count should be 1 here, and 32 only happens to be correct because this map has
-				// under 1024 surfaces. A map the size of mp_paris needs 384.
 				new_asset->dpvs.sunShadowOptCount =
 					std::min<unsigned int>(new_asset->lastSunPrimaryLightIndex, 5);
 				new_asset->dpvs.sunSurfVisDataCount =
 					(new_asset->dpvs.surfaceVisDataCount + 31) & ~31u;//
-				// Left null on purpose: the linker allocates it during parse, sized from the two
-				// counts above - allocate<unsigned int>(sunShadowOptCount * sunSurfVisDataCount) -
-				// so these values are what decide that buffer's size.
-				new_asset->dpvs.surfaceCastsSunShadowOpt = nullptr; // allocated in x64zt
+				new_asset->dpvs.surfaceCastsSunShadowOpt = nullptr;
 				new_asset->dpvs.surfaceCastsSunShadow = asset->dpvs.surfaceCastsSunShadow;
 
-				// old smodel index -> index after the map compiler's static model sort, streamed as
-				// 2 * smodelCount bytes. IW7 never reads it (the only code touching dpvs+0x370 is
-				// Load/Preload_GfxWorldDpvsStatic; the umbra path remaps smodels through lodData
-				// instead) and shipped IW7 zones such as mp_bog and mp_shipment carry it fully zeroed.
-				// We do not reorder anything, so write the identity map.
 				new_asset->dpvs.sortedSmodelIndices = allocator.allocate<unsigned short>(asset->dpvs.smodelCount);
 				for (unsigned int i = 0; i < asset->dpvs.smodelCount; i++)
 				{
@@ -3671,9 +3055,6 @@ namespace ZoneTool::IW5
 			COPY_VALUE(heroOnlyLightCount);
 			REINTERPRET_CAST_SAFE(heroOnlyLights);
 
-			// IW7 renders nothing at all without a tome here - see GfxWorldUmbra.cpp. This
-			// needs the dpvs arrays above (sortedSurfIndex, lodData, smodelInsts) and the
-			// renderable counts the user IDs are keyed on, so it runs last.
 			generate_umbra_tome(asset, new_asset, allocator);
 
 			// the second tome is the gate tome, and gates are a T7/IW7 authoring concept

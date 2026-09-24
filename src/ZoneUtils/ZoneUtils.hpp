@@ -52,6 +52,25 @@ namespace zonetool
 
 	extern dump_target dumping_target;
 	extern dump_source dumping_source;
+
+	inline std::string csv_type_for_target(const std::string& type)
+	{
+		if (dumping_target != dump_target::iw7)
+		{
+			return type;
+		}
+
+		if (type == "col_map_mp") return "col_map";
+		if (type == "fx") return "vfx";
+
+		if (type == "loaded_sound" || type == "sound" || type == "sndcurve"
+			|| type == "physpreset" || type == "phys_collmap")
+		{
+			return {};
+		}
+
+		return type;
+	}
 }
 
 namespace ZoneTool
@@ -168,6 +187,7 @@ static std::vector<std::string> split(const std::string& str, char delimiter)
 
 #include "Compression.hpp"
 #include "EntStrings.hpp"
+#include "Logger.hpp"
 
 #define MAKE_STRING(__data__) #__data__
 
@@ -181,15 +201,15 @@ static std::vector<std::string> split(const std::string& str, char delimiter)
 	printf("[ INFO ][ " __FUNCTION__ " ]: " __FMT__ "\n", __VA_ARGS__)
 
 #define ZONETOOL_ERROR(__FMT__,...) \
-	printf("[ ERROR ][ " __FUNCTION__ " ]: " __FMT__ "\n", __VA_ARGS__)
+	ZoneTool::log_print("[ ERROR ][ " __FUNCTION__ " ]: " __FMT__ "\n", __VA_ARGS__)
 
 #define ZONETOOL_FATAL(__FMT__,...) \
-	printf("[ FATAL ][ " __FUNCTION__ " ]: " __FMT__ "\n", __VA_ARGS__); \
+	ZoneTool::log_print("[ FATAL ][ " __FUNCTION__ " ]: " __FMT__ "\n", __VA_ARGS__); \
 	MessageBoxA(nullptr, &va("Oops! An unexpected error occured. Error was: " __FMT__ "\n\nZoneTool must be restarted to resolve the error. Last error code reported by windows: 0x%08X (%u)", __VA_ARGS__, GetLastError(), GetLastError())[0], nullptr, 0); \
 	std::exit(0)
 
 #define ZONETOOL_WARNING(__FMT__,...) \
-	printf("[ WARNING ][ " __FUNCTION__ " ]: " __FMT__ "\n", __VA_ARGS__)
+	ZoneTool::log_print("[ WARNING ][ " __FUNCTION__ " ]: " __FMT__ "\n", __VA_ARGS__)
 
 template <typename T>
 static std::shared_ptr<T> RegisterPatch()

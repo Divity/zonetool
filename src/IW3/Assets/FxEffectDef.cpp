@@ -4,8 +4,6 @@
 #include "FxMaterialDeps.hpp"
 #include "XModel.hpp"
 
-// The IW5->IW7 model converter's request registry (Converter/IW7/Assets/XModel.hpp);
-// declared here because that header drags in IW7 types this project does not see.
 namespace ZoneTool::IW5::IW7Converter
 {
 	bool wants_dynamic_box(const std::string& model, float* mass);
@@ -75,10 +73,6 @@ namespace ZoneTool
 			// dump fx
 			IW4::IFxEffectDef::dump(iw4_asset);
 
-			// The IW7 particle converter turns model elements with FX_ELEM_USE_MODEL_PHYSICS
-			// into real physics bodies, which need a dynamic physics asset on the model. It
-			// registers those models; run each through the model chain again so the asset on
-			// disk is the dynamic one, whatever was written for it before this effect.
 			if (zonetool::dumping_target == zonetool::dump_target::iw7)
 			{
 				std::vector<XModel*> redumped;
